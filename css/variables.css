@@ -1,0 +1,42 @@
+/* ===== PALETA OFICIAL SIGA =====
+   4 tonos pastel "bebe" con la MISMA luminosidad (~88-90%) entre si.
+   Esto es a proposito: si un color pastel tiene menos luz que sus vecinos,
+   el punto medio del degradado se ve turbio al mezclarse. Manteniendolos
+   parejos, cualquier combinacion entre ellos se mantiene clara y nitida.
+   Se reusa en TODOS los modulos, no solo en la landing. */
+:root {
+  --bg-cian: #C9F4F7;
+  --bg-lavanda: #E4CAF6;
+  --bg-ciruela: #F5C7E6;
+  --bg-amarillo: #F9EEB8;
+
+  /* version oscura de cada tono, para texto/acentos con buen contraste sobre blanco */
+  --acento-cian: #0E7C86;
+  --acento-lavanda: #7B3FC4;
+  --acento-ciruela: #C13F94;
+  --acento-amarillo: #A67B00;
+
+  /* Colores de marca: el mismo azul-morado del logo y de los botones
+     (Registrarse, Comenzar). Los fondos de sección se derivan de esta
+     misma familia (tinte casi blanco), en vez de colores sueltos sin
+     relación entre si. Una seccion = mas azul, la siguiente = mas
+     morado, y asi se van alternando a lo largo de la pagina. */
+  --brand-azul: #3C7CF8;
+  --brand-morado: #6600CC;
+  --brand-azul-tinte: #EAF2FF;
+  --brand-morado-tinte: #F3EAFB;
+
+  /* Solo blanco y negro para texto: --ink es negro puro, --ink-soft es un
+     gris neutro (sombra de negro, sin matiz de color) para texto secundario. */
+  --ink: #000000;
+  --ink-soft: #4A4A4A;
+  --paper: #FFFDF9;
+
+  /* tipografia:
+     - font-logo: SOLO para "SIGA" y "Conecta. Organiza. Avanza." (Black Ops One, sin negrita).
+     - font-nav / font-heading / font-body: Orbitron Medium (weight 500) para todo lo demas. */
+  --font-logo: 'Black Ops One', sans-serif;
+  --font-nav: 'Orbitron', sans-serif;
+  --font-heading: 'Orbitron', sans-serif;
+  --font-body: 'Orbitron', sans-serif;
+}

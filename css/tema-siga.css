@@ -1,0 +1,230 @@
+/* ============================================================
+   SIGA — TEMA GLOBAL (Entrega 1)
+   ------------------------------------------------------------
+   Cargar DESPUÉS de variables.css (y de dashboard.css) en TODAS
+   las páginas que usan el nav global: dashboard, asesorias,
+   materiales, opiniones, perfil, configuracion, horarios.
+
+   Mecanismo: sobreescribe los MISMOS tokens que ya declara
+   variables.css (--ink, --paper, --brand-azul, --brand-morado,
+   --brand-azul-tinte, --brand-morado-tinte) según el atributo
+   data-tema del <html>. "Claro" no necesita bloque propio: son
+   los valores por defecto de variables.css, tal cual están hoy.
+
+   Ojo: --bg-cian/--bg-lavanda/--bg-ciruela/--bg-amarillo (los 4
+   pasteles de la landing pública) NO se tocan acá a propósito —
+   esa pantalla no vive en este proyecto y su look ya quedó
+   cerrado. Si más adelante se quiere que la landing también
+   reaccione al tema, se suma en un paso aparte.
+
+   Intranotas NO lee estas variables todavía (Entrega 2).
+   ============================================================ */
+
+:root {
+    /* Fondo animado del body (dashboard.css). En "claro" es
+     EXACTAMENTE el degradado actual — cero cambio visual. */
+    --siga-body-gradiente: linear-gradient(135deg,
+            rgba(0, 255, 255, 0.13) 0%,
+            rgba(0, 255, 255, 0.13) 26%,
+            rgba(204, 0, 255, 0.2) 78%,
+            rgba(204, 0, 255, 0.2) 100%);
+}
+
+html[data-tema="oscuro"] {
+    --paper: #15121e;
+    --brand-azul: #7c5cff;
+    --brand-morado: #a855f7;
+
+    /* --brand-azul-tinte / --brand-morado-tinte NO se oscurecen: se
+     usan como fondo en varios componentes (selects, dropdowns) que
+     siempre muestran texto con --ink, y --ink se queda igual que en
+     Claro (oscuro/legible) a propósito. Si estos tintes se oscurecen,
+     ese texto se vuelve ilegible (oscuro sobre oscuro). Se quedan en
+     sus valores de Claro (definidos en variables.css) sin bloque
+     propio acá. */
+
+    /* Solo para texto que flota directo sobre el fondo animado del body,
+     sin ninguna tarjeta blanca detrás (ej. el párrafo del hero). TODO
+     el resto del texto (--ink, --ink-soft) se queda igual que en Claro
+     a propósito: vive dentro de tarjetas blancas, donde texto oscuro
+     siempre se lee bien sin importar el tono del fondo general. */
+    --hero-texto: #cbc3e8;
+
+    /* Mismos valores rgba que ya usa Intranotas para su tema Dark
+     (siga-theme-intranotas.css) — mantenemos la tonalidad ya
+     aprobada en vez de inventar una nueva. */
+    --siga-body-gradiente: linear-gradient(135deg,
+            rgba(77, 208, 225, 0.30) 0%,
+            rgba(77, 208, 225, 0.30) 26%,
+            rgba(100, 181, 246, 0.10) 78%,
+            rgba(100, 181, 246, 0.10) 100%);
+}
+
+html[data-tema="ocean"] {
+    --ink: #072a30;
+    --ink-soft: #3f6b73;
+    --paper: #f0fbfd;
+    --brand-azul: #0891b2;
+    --brand-morado: #0e7490;
+    --brand-azul-tinte: #eaf9fb;
+    --brand-morado-tinte: #dff5f8;
+
+    --siga-body-gradiente: linear-gradient(135deg,
+            rgba(101, 238, 241, 0.18) 0%,
+            rgba(101, 238, 241, 0.18) 26%,
+            rgba(29, 78, 216, 0.60) 78%,
+            rgba(29, 78, 216, 0.60) 100%);
+}
+
+html[data-tema="forest"] {
+    --ink: #0f2e0f;
+    --ink-soft: #2f5233;
+    --paper: #f0fdf4;
+    --brand-azul: #22c55e;
+    --brand-morado: #15803d;
+    --brand-azul-tinte: #dcfce7;
+    --brand-morado-tinte: #bbf7d0;
+
+    --siga-body-gradiente: linear-gradient(135deg,
+            rgba(171, 221, 95, 0.20) 0%,
+            rgba(171, 221, 95, 0.20) 26%,
+            rgba(42, 161, 18, 0.74) 78%,
+            rgba(42, 161, 18, 0.74) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    html[data-tema="oscuro"] body,
+    html[data-tema="ocean"] body,
+    html[data-tema="forest"] body {
+        animation: none;
+        background-position: 50% 50%;
+    }
+}
+
+/* ============================================================
+   WIDGET COMPACTO DEL NAV — reemplaza a las franjas anchas
+   .contenedor-tema (Intranotas) y .siga-topbar (Horarios).
+   Vive dentro de .app-nav-user, junto al avatar.
+   ============================================================ */
+
+/* .app-nav-user ya trae position:relative + flex:0 0 auto desde
+   dashboard.css; acá solo se agrega el display:flex para poder
+   poner el selector de tema y el avatar uno junto al otro. */
+.app-nav-user {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.app-nav-tema {
+    position: relative;
+}
+
+.tema-boton {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    background: #fff;
+    font-size: 15px;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tema-boton:hover,
+.tema-boton[aria-expanded="true"] {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
+}
+
+.tema-menu {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    min-width: 148px;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
+    padding: 6px;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 30;
+}
+
+.tema-menu.abierto {
+    display: flex;
+}
+
+.tema-opcion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 10px;
+    background: none;
+    font-family: var(--font-nav);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tema-opcion:hover {
+    background: var(--brand-azul-tinte);
+    color: var(--ink);
+}
+
+.tema-opcion.activo {
+    background: var(--brand-morado-tinte);
+    color: var(--brand-morado);
+    font-weight: 600;
+}
+
+.tema-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Mismos gradientes que ya se usaban en el widget de Horarios —
+   se mantienen las tonalidades tal cual, solo cambia dónde vive
+   el componente. */
+.tema-swatch.claro {
+    background: linear-gradient(135deg, #3C7CF8, #6600CC);
+}
+
+.tema-swatch.oscuro {
+    background: linear-gradient(135deg, #3a2657, #0b0712);
+}
+
+.tema-swatch.ocean {
+    background: linear-gradient(135deg, #0891b2, #a5f3fc);
+}
+
+.tema-swatch.forest {
+    background: linear-gradient(135deg, #16a34a, #bbf7d0);
+}
+
+/* ============================================================
+   FIX DE CONTRASTE — el fondo del nav global (.app-nav) NUNCA
+   cambia con el tema, siempre queda crema/blanco (dashboard.css:
+   rgba(255,253,249,0.92)). Si su texto lee las variables de tema
+   (--ink/--ink-soft), en Oscuro el texto se vuelve casi blanco y
+   queda invisible sobre ese fondo que nunca oscureció. Se fija
+   el nav a sus valores originales de "claro" siempre, sin
+   importar qué tono esté activo en el resto de la página.
+   ============================================================ */
+.app-nav {
+    --ink: #000000;
+    --ink-soft: #4A4A4A;
+}
