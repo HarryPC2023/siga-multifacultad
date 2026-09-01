@@ -1,4 +1,5 @@
 import datetime
+import io
 import logging
 import re
 import threading
@@ -12,6 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
 
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
+
 app = FastAPI()
 
 logger = logging.getLogger("recoleccion_notas")
@@ -24,6 +30,10 @@ ORIGENES_PERMITIDOS = [
     "http://localhost:4000",   # Jekyll en local
     "http://127.0.0.1:4000",
     "https://harrypc2023.github.io",  # tu dominio real de producción (confirmado: sin CNAME propio)
+    # ⚠️ NO hace falta agregar una entrada aparte para /siga-multifacultad/:
+    # el header Origin del navegador solo incluye esquema+host+puerto, sin
+    # el path — "https://harrypc2023.github.io" ya cubre cualquier subcarpeta
+    # (portal-siga, siga-multifacultad, la que sea).
 ]
 
 app.add_middleware(
@@ -205,6 +215,33 @@ def simplificar_etiqueta(texto):
     if "EXAMEN SUSTITUTORIO" in t:
         return "ES"
     return t
+
+
+def _extraer_formulas_curso(page):
+    """Lee el texto crudo de las dos fórmulas de evaluación del curso,
+    si están presentes en la página (misma página de detalle donde ya
+    leemos la tabla de notas — no navega a ningún lado nuevo).
+
+    'Fórmula Nota Final' suele estar disponible desde el inicio del
+    curso; 'Fórmula de Prácticas (PP)' a veces solo aparece más cerca
+    del final del ciclo — por eso cada una se intenta leer por separado
+    y ninguna hace fallar a la otra si no está.
+    """
+    formula_practicas_raw = None
+    formula_final_raw = None
+    try:
+        formula_practicas_raw = page.locator("#txt-formula-practicas").text_content(timeout=2000)
+        if formula_practicas_raw:
+            formula_practicas_raw = formula_practicas_raw.strip()
+    except Exception:
+        pass
+    try:
+        formula_final_raw = page.locator("#txt-formula-nota-final").text_content(timeout=2000)
+        if formula_final_raw:
+            formula_final_raw = formula_final_raw.strip()
+    except Exception:
+        pass
+    return formula_practicas_raw, formula_final_raw
 
 
 def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
@@ -398,9 +435,18 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
                                 job_id, c_info["cod_curso"], periodo, MAX_INTENTOS_NOTAS, titulo_pagina, fragmento_html,
                             )
 
+                    # Fórmulas de evaluación: se leen de la MISMA página en la
+                    # que ya estamos paradxs (url_det), sin navegar a ningún
+                    # lado nuevo. Se intenta siempre, haya o no evaluaciones
+                    # todavía — "Fórmula Nota Final" suele estar disponible
+                    # desde el inicio del curso, antes que las notas mismas.
+                    formula_practicas_raw, formula_final_raw = _extraer_formulas_curso(page)
+
                     logger.info(
-                        "Job %s:   %s (%s) -> %d evaluaciones encontradas",
+                        "Job %s:   %s (%s) -> %d evaluaciones encontradas, fórmulas: pp=%s final=%s",
                         job_id, c_info["cod_curso"], periodo, len(evaluaciones),
+                        "sí" if formula_practicas_raw else "no",
+                        "sí" if formula_final_raw else "no",
                     )
 
                     creditos_val = c_info["creditos"]
@@ -412,6 +458,9 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
                             if creditos_val.isdigit()
                             else creditos_val,
                             "evaluaciones": evaluaciones,
+                            "seccion": c_info["seccion"],
+                            "formula_practicas_raw": formula_practicas_raw,
+                            "formula_final_raw": formula_final_raw,
                         }
                     )
 
@@ -492,6 +541,199 @@ def consultar_sync(job_id: str):
             "periodo_actual": job.get("periodo_actual"),
             "periodos": job.get("periodos"),
         }
+
+
+# ================================================================
+# AVANCE CURRICULAR (PDF) — malla completa de 10 ciclos, prerrequisitos
+# y nota de cada curso, en un solo fetch autenticado. A diferencia de
+# /api/sync-intralu, esta SÍ es síncrona: es una sola descarga de PDF,
+# no recorre curso por curso, así que no necesita el patrón de
+# job/polling — toma segundos, no minutos.
+# ================================================================
+
+def _normalizar_periodo_pdf(periodo_pdf):
+    """Traduce el formato de periodo que usa el PDF ('232', '24V'...) al
+    formato de 5 dígitos que usa el resto del sistema ('20232', '20243').
+    'V' = verano = tipo '3'. Ejemplo: '232' -> año '2023' + tipo '2' ->
+    '20232'. '24V' -> año '2024' + tipo '3' (verano) -> '20243'.
+
+    ⚠️ Deducido de las capturas de pantalla del PDF — confirmar contra un
+    PDF real: en particular, si el año en el PDF alguna vez viene con 4
+    dígitos en vez de 2 (poco probable pero no descartado)."""
+    if not periodo_pdf:
+        return None
+    p = periodo_pdf.strip().upper()
+    if len(p) < 3:
+        return None
+    anio_corto, tipo_raw = p[:2], p[2:]
+    if not anio_corto.isdigit():
+        return None
+    anio = f"20{anio_corto}"
+    if tipo_raw == "V":
+        tipo = "3"
+    elif tipo_raw in ("1", "2"):
+        tipo = tipo_raw
+    else:
+        return None
+    return f"{anio}{tipo}"
+
+
+def _parsear_avance_curricular_pdf(pdf_bytes):
+    """Convierte el PDF de Avance Curricular en una lista de cursos.
+
+    ⚠️ PENDIENTE DE PROBAR CONTRA UN PDF REAL. Escrito a partir de
+    capturas de pantalla del PDF (columnas: Código, Curso, Cred., Pre
+    Requisitos, Facultad, Periodo, Nota, [veces llevado], [situación]).
+    Es probable que la primera corrida real requiera ajustar algo — si
+    `cursos` sale vacío o con datos raros, revisa los logs (se imprime
+    la cantidad de tablas/filas crudas encontradas) antes de asumir que
+    el PDF cambió de formato.
+    """
+    if pdfplumber is None:
+        raise RuntimeError("Falta instalar pdfplumber (agrégalo a requirements.txt)")
+
+    cursos = []
+    ciclo_actual = None
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for num_pagina, pagina in enumerate(pdf.pages, start=1):
+            tablas = pagina.extract_tables()
+            logger.info("Avance curricular: página %d -> %d tabla(s) detectada(s)", num_pagina, len(tablas))
+
+            for tabla in tablas:
+                for fila in tabla:
+                    celdas = [(c or "").strip() for c in fila]
+                    texto_fila = " ".join(celdas).strip()
+
+                    if not texto_fila:
+                        continue
+
+                    # Fila de encabezado de ciclo: "CICLO : 01" (suele venir
+                    # como una única celda larga que ocupa toda la fila).
+                    m_ciclo = re.search(r"CICLO\s*:\s*0?(\d+)", texto_fila, re.I)
+                    if m_ciclo and len(texto_fila) < 20:
+                        ciclo_actual = int(m_ciclo.group(1))
+                        continue
+
+                    # Fila de encabezado de columnas ("Código", "Curso"...)
+                    if celdas[0].lower() in ("código", "codigo"):
+                        continue
+
+                    codigo = celdas[0] if len(celdas) > 0 else ""
+                    if not codigo:
+                        # Fila "huérfana": probablemente el nombre del curso se
+                        # partió en dos líneas dentro de la celda del PDF — la
+                        # pegamos al curso anterior en vez de perderla.
+                        if cursos and len(celdas) > 1 and celdas[1]:
+                            cursos[-1]["nombre"] = (cursos[-1]["nombre"] + " " + celdas[1]).strip()
+                        continue
+
+                    nombre = celdas[1].rstrip("-").strip() if len(celdas) > 1 else ""
+                    creditos_raw = celdas[2] if len(celdas) > 2 else ""
+                    prereq = celdas[3] if len(celdas) > 3 else ""
+                    facultad = celdas[4] if len(celdas) > 4 else ""
+                    periodo_pdf = celdas[5] if len(celdas) > 5 else ""
+                    nota_raw = celdas[6] if len(celdas) > 6 else ""
+                    veces_raw = celdas[7] if len(celdas) > 7 else ""
+                    situacion = celdas[8] if len(celdas) > 8 else ""
+
+                    try:
+                        creditos = int(creditos_raw)
+                    except ValueError:
+                        creditos = None
+
+                    try:
+                        nota = float(nota_raw) if nota_raw else None
+                    except ValueError:
+                        nota = None
+
+                    try:
+                        veces_llevado = int(veces_raw) if veces_raw else None
+                    except ValueError:
+                        veces_llevado = None
+
+                    cursos.append({
+                        "ciclo": ciclo_actual,
+                        "codigo": codigo,
+                        "nombre": nombre,
+                        "creditos": creditos,
+                        "prerequisitos": prereq or None,
+                        "facultad": facultad or None,
+                        "periodo_pdf": periodo_pdf or None,
+                        "periodo_normalizado": _normalizar_periodo_pdf(periodo_pdf) if periodo_pdf else None,
+                        "nota": nota,
+                        "veces_llevado": veces_llevado,
+                        "situacion": situacion or None,
+                    })
+
+    logger.info("Avance curricular: %d curso(s) interpretado(s) en total", len(cursos))
+    return cursos
+
+
+@app.post("/api/avance-curricular")
+def obtener_avance_curricular(credentials: LoginRequest):
+    """Login + descarga autenticada del PDF de Avance Curricular +
+    parseo. El campo `periodo` de LoginRequest se ignora acá (no aplica
+    a este endpoint, solo está en el modelo porque se comparte con
+    /api/sync-intralu)."""
+    adquirido = _semaforo_sync.acquire(blocking=False)
+    if not adquirido:
+        raise HTTPException(
+            status_code=429,
+            detail="Hay una sincronización en curso ahora mismo. Intenta de nuevo en un minuto."
+        )
+
+    inicio = time.time()
+    browser = None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+
+            page.goto("https://alumnos.uni.edu.pe/login", wait_until="domcontentloaded")
+            page.fill("#txt-codigo", credentials.codigo)
+            page.fill("#txt-password", credentials.password)
+            page.click("#btn-login")
+
+            try:
+                page.wait_for_url("**/home**", timeout=20000)
+            except Exception:
+                raise HTTPException(status_code=401, detail="Código o contraseña incorrectos en Intralú.")
+
+            # Descarga autenticada del PDF: reusa las cookies de sesión de
+            # este mismo browser context (page.request comparte cookies con
+            # page) — no hace falta ningún login aparte para el PDF.
+            resp = page.request.get("https://alumnos.uni.edu.pe/informacion-academica/avance-curricular-pdf")
+            if resp.status != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"No se pudo descargar el PDF de Avance Curricular (HTTP {resp.status}).",
+                )
+
+            pdf_bytes = resp.body()
+            cursos = _parsear_avance_curricular_pdf(pdf_bytes)
+
+            duracion = time.time() - inicio
+            logger.info(
+                "Avance curricular: ✅ COMPLETO en %.1fs — %d cursos", duracion, len(cursos),
+            )
+
+            return {"status": "success", "total_cursos": len(cursos), "cursos": cursos}
+
+    except HTTPException:
+        logger.info("Avance curricular: ❌ TERMINÓ CON ERROR tras %.1fs", time.time() - inicio)
+        raise
+    except Exception as e:
+        logger.exception("Error obteniendo avance curricular")
+        logger.info("Avance curricular: ❌ TERMINÓ CON ERROR tras %.1fs", time.time() - inicio)
+        raise HTTPException(status_code=500, detail=f"Error en servidor: {str(e)}")
+    finally:
+        if browser:
+            try:
+                browser.close()
+            except Exception:
+                pass
+        _semaforo_sync.release()
 
 
 # ================================================================
