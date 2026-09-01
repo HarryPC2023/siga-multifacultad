@@ -618,6 +618,7 @@ def _parsear_avance_curricular_pdf(pdf_bytes):
 
     cursos = []
     ciclo_actual = None
+    categoria_actual = "obligatorio"  # cambia a "electivo"/"electivo_complementario" al pasar esos títulos de sección
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for num_pagina, pagina in enumerate(pdf.pages, start=1):
@@ -634,9 +635,23 @@ def _parsear_avance_curricular_pdf(pdf_bytes):
 
                     # Fila de encabezado de ciclo: "CICLO : 01" (suele venir
                     # como una única celda larga que ocupa toda la fila).
+                    # Un ciclo nuevo también reinicia la categoría a
+                    # "obligatorio" — los títulos de electivos solo aplican
+                    # dentro del bloque de ciclo 10 donde aparecen.
                     m_ciclo = re.search(r"CICLO\s*:\s*0?(\d+)", texto_fila, re.I)
                     if m_ciclo and len(texto_fila) < 20:
                         ciclo_actual = int(m_ciclo.group(1))
+                        categoria_actual = "obligatorio"
+                        continue
+
+                    # Títulos de sección de electivos: no son cursos en sí,
+                    # pero marcan la categoría de TODO lo que viene después,
+                    # hasta el próximo título o el próximo "CICLO : NN".
+                    if "ELECTIVO" in texto_fila.upper():
+                        if "COMPLEMENTARIO" in texto_fila.upper():
+                            categoria_actual = "electivo_complementario"
+                        else:
+                            categoria_actual = "electivo"
                         continue
 
                     # Fila de encabezado de columnas ("Código", "Curso"...)
@@ -685,6 +700,7 @@ def _parsear_avance_curricular_pdf(pdf_bytes):
 
                     cursos.append({
                         "ciclo": ciclo_actual,
+                        "categoria": categoria_actual,
                         "codigo": codigo,
                         "nombre": nombre,
                         "creditos": creditos,
