@@ -591,16 +591,30 @@ def _normalizar_periodo_pdf(periodo_pdf):
 def _parsear_avance_curricular_pdf(pdf_bytes):
     """Convierte el PDF de Avance Curricular en una lista de cursos.
 
-    ⚠️ PENDIENTE DE PROBAR CONTRA UN PDF REAL. Escrito a partir de
-    capturas de pantalla del PDF (columnas: Código, Curso, Cred., Pre
-    Requisitos, Facultad, Periodo, Nota, [veces llevado], [situación]).
-    Es probable que la primera corrida real requiera ajustar algo — si
-    `cursos` sale vacío o con datos raros, revisa los logs (se imprime
-    la cantidad de tablas/filas crudas encontradas) antes de asumir que
-    el PDF cambió de formato.
+    Columnas esperadas: Código, Curso, Cred., Pre Requisitos, Facultad,
+    Periodo, Nota, [veces llevado], [situación].
+
+    Filtro de calidad CONFIRMADO con datos reales: además de la malla,
+    el PDF trae texto de resumen al final ("CURSOS ELECTIVOS",
+    "Promedio Ponderado", "N° Créditos Llevados", una tabla de créditos
+    mínimos/máximos por ciclo relativo...) que pdfplumber detecta como
+    si fueran más filas de la misma tabla. En vez de tratar de nombrar
+    cada uno de esos textos a mano (frágil: cambiaría con cada malla o
+    facultad), se valida que el código tenga la FORMA real de un código
+    de curso UNI (letras + números, sin espacios) — cualquier fila que
+    no calce se descarta, sea basura de pie de página o cualquier otra
+    cosa inesperada.
     """
     if pdfplumber is None:
         raise RuntimeError("Falta instalar pdfplumber (agrégalo a requirements.txt)")
+
+    # Códigos reales confirmados: BIC01, BMA02, FB101, SI101, GE605,
+    # TE111, HU400, SI036... siempre 2-4 letras + 2-4 números, sin
+    # espacios ni símbolos. Filtra de un solo golpe encabezados de
+    # sección ("CURSOS ELECTIVOS"), texto de resumen ("Promedio
+    # Ponderado", "N° Créditos Llevados") y la tabla de créditos por
+    # ciclo relativo ("01".."10", "xx") — ninguno de esos calza.
+    PATRON_CODIGO_CURSO = re.compile(r"^[A-Z]{2,4}\d{2,4}[A-Z]?$")
 
     cursos = []
     ciclo_actual = None
@@ -630,12 +644,19 @@ def _parsear_avance_curricular_pdf(pdf_bytes):
                         continue
 
                     codigo = celdas[0] if len(celdas) > 0 else ""
+
                     if not codigo:
                         # Fila "huérfana": probablemente el nombre del curso se
                         # partió en dos líneas dentro de la celda del PDF — la
                         # pegamos al curso anterior en vez de perderla.
                         if cursos and len(celdas) > 1 and celdas[1]:
                             cursos[-1]["nombre"] = (cursos[-1]["nombre"] + " " + celdas[1]).strip()
+                        continue
+
+                    if not PATRON_CODIGO_CURSO.fullmatch(codigo):
+                        # No tiene forma de código de curso real — descartado
+                        # (texto de resumen, encabezado de sección, etc.).
+                        logger.info("Avance curricular: fila descartada (código no válido: %r) -> %r", codigo, celdas)
                         continue
 
                     nombre = celdas[1].rstrip("-").strip() if len(celdas) > 1 else ""
