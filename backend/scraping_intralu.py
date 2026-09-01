@@ -553,13 +553,21 @@ def consultar_sync(job_id: str):
 
 def _normalizar_periodo_pdf(periodo_pdf):
     """Traduce el formato de periodo que usa el PDF ('232', '24V'...) al
-    formato de 5 dígitos que usa el resto del sistema ('20232', '20243').
-    'V' = verano = tipo '3'. Ejemplo: '232' -> año '2023' + tipo '2' ->
-    '20232'. '24V' -> año '2024' + tipo '3' (verano) -> '20243'.
+    formato de 5 dígitos que usa el resto del sistema ('20232', '20233').
 
-    ⚠️ Deducido de las capturas de pantalla del PDF — confirmar contra un
-    PDF real: en particular, si el año en el PDF alguna vez viene con 4
-    dígitos en vez de 2 (poco probable pero no descartado)."""
+    ⚠️ CONFIRMADO CON DATOS REALES (no es una suposición): el PDF numera
+    el verano por el AÑO CALENDARIO REAL en que ocurre ('24V' = el verano
+    que pasó en 2024, examen de enero-marzo). Pero el resto del sistema
+    (ver etiquetar_periodo() arriba) numera ese MISMO verano con el año
+    del semestre regular al que sigue — es decir, el verano que sigue a
+    '2023-2' se llama internamente '2023-3' aunque ocurra en el
+    calendario de 2024. Por eso, y SOLO para verano, hay que restar 1 al
+    año del PDF antes de armar el código interno. Para semestres
+    regulares (tipo 1 o 2) no hay desfase: el año del PDF coincide 1:1.
+
+    Ejemplos: '232' -> '20232' (2023-2, sin ajuste).
+              '24V' -> año PDF 2024, -1 por ser verano -> '20233' (2023-3).
+    """
     if not periodo_pdf:
         return None
     p = periodo_pdf.strip().upper()
@@ -568,10 +576,12 @@ def _normalizar_periodo_pdf(periodo_pdf):
     anio_corto, tipo_raw = p[:2], p[2:]
     if not anio_corto.isdigit():
         return None
-    anio = f"20{anio_corto}"
+    anio_pdf = int(f"20{anio_corto}")
     if tipo_raw == "V":
+        anio = anio_pdf - 1  # el verano se etiqueta con el año del semestre anterior
         tipo = "3"
     elif tipo_raw in ("1", "2"):
+        anio = anio_pdf
         tipo = tipo_raw
     else:
         return None
