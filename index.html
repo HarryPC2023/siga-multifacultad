@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIGA Multifacultad — Sandbox</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/tema-siga.css">
+  <link rel="stylesheet" href="css/selector-facultad.css">
+
+  <style>
+    body {
+      margin: 0;
+      background: var(--paper);
+      font-family: var(--font-body);
+      color: var(--ink);
+    }
+    .contenedor-principal {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+    .encabezado-sandbox {
+      margin-bottom: 24px;
+    }
+    .encabezado-sandbox__marca {
+      font-family: var(--font-logo);
+      font-size: 22px;
+      color: var(--brand-morado);
+      margin: 0 0 4px;
+    }
+    .encabezado-sandbox__titulo {
+      font-family: var(--font-heading);
+      font-weight: 500;
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+    .encabezado-sandbox__subtitulo {
+      font-size: 14px;
+      color: var(--ink-soft);
+      margin: 0;
+    }
+    .banner-sandbox {
+      background: var(--bg-amarillo);
+      color: var(--acento-amarillo);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="contenedor-principal">
+    <header class="encabezado-sandbox">
+      <p class="encabezado-sandbox__marca">SIGA</p>
+      <h1 class="encabezado-sandbox__titulo">Elige tu facultad</h1>
+      <p class="encabezado-sandbox__subtitulo">Selecciona tu facultad y carrera para conectar tu cuenta de Intralú.</p>
+    </header>
+
+    <div class="banner-sandbox">
+      🧪 Sandbox de prueba (siga-multifacultad) — aislado de tu SIGA real, no afecta a otros usuarios.
+    </div>
+
+    <main id="gridFacultades" class="selector-facultades" aria-live="polite">
+      <!-- Las 11 tarjetas se generan dinámicamente desde js/selector-facultad.js -->
+    </main>
+
+    <div id="avisoSeleccion" class="aviso-seleccion" role="status"></div>
+  </div>
+
+  <script type="module">
+    import { inicializarSelectorFacultades } from "./js/selector-facultad.js";
+    inicializarSelectorFacultades("gridFacultades");
+  </script>
+</body>
+</html>
