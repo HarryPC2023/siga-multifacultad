@@ -5,7 +5,7 @@
 // inventado a mano) — así el borde de la tarjeta siempre hace juego con
 // su propio ícono, sin desajustes.
 //
-// `carreras` con un solo elemento = facultad de carrera única (FAUA, FIC):
+// `carreras` con un solo elemento = facultad de carrera única (FIC):
 // el selector las trata distinto, saltándose el paso del acordeón y yendo
 // directo al siguiente paso al tocar la tarjeta.
 
@@ -16,7 +16,10 @@ export const FACULTADES = [
     nombre: "Facultad de Arquitectura, Urbanismo y Artes",
     color: "#FE9B01",
     icono: "assets/facultades/faua.png",
-    carreras: [{ id: "arquitectura", nombre: "Arquitectura" }],
+    carreras: [
+      { id: "arquitectura", nombre: "Arquitectura" },
+      { id: "urbanismo-artes", nombre: "Urbanismo y Artes" },
+    ],
   },
   {
     id: "fc",

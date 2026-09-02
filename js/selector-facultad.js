@@ -17,17 +17,27 @@ function crearTarjetaHTML(facultad) {
     )
     .join("");
 
+  // Colapsada: solo ícono + sigla. El nombre completo y las carreras solo
+  // aparecen al expandir — excepción: facultades de carrera única (FIC)
+  // nunca se expanden, así que su nombre se muestra fijo desde el inicio
+  // (si no, el alumno nunca sabría qué carrera es antes de tocarla).
   return `
     <div class="tarjeta-facultad" style="--color-facultad:${facultad.color}" data-facultad-id="${facultad.id}" data-carrera-unica="${esCarreraUnica}" role="button" tabindex="0" aria-expanded="false">
       <div class="tarjeta-facultad__cabecera">
         <img class="tarjeta-facultad__icono" src="${facultad.icono}" alt="Ícono de ${facultad.sigla}" loading="lazy">
-        <div class="tarjeta-facultad__texto">
-          <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
-          <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
-        </div>
-        ${esCarreraUnica ? "" : crearIconoChevron()}
+        <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
+        ${esCarreraUnica
+      ? `<p class="tarjeta-facultad__nombre tarjeta-facultad__nombre--fija">${facultad.nombre}</p>`
+      : crearIconoChevron()
+    }
       </div>
-      ${esCarreraUnica ? "" : `<div class="tarjeta-facultad__carreras">${chipsCarreras}</div>`}
+      ${esCarreraUnica
+      ? ""
+      : `<div class="tarjeta-facultad__detalle">
+               <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
+               <div class="tarjeta-facultad__carreras">${chipsCarreras}</div>
+             </div>`
+    }
     </div>
   `;
 }
