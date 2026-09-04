@@ -12,7 +12,7 @@
 
 .selector-facultades {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
   gap: 14px;
   padding: 8px 0 32px;
 }
@@ -70,8 +70,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: clamp(60px, 48cqw, 120px);
-  height: clamp(60px, 48cqw, 120px);
+  width: clamp(70px, 62cqw, 160px);
+  height: clamp(70px, 62cqw, 160px);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -79,7 +79,7 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: clamp(16px, 10cqw, 26px);
+  font-size: clamp(18px, 13cqw, 32px);
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
@@ -103,8 +103,8 @@
    aparece en facultades de una sola carrera (FIC), que van directo al
    siguiente paso sin acordeón. */
 .tarjeta-facultad__chevron {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   color: var(--color-facultad);
   opacity: 0.65;
   transition: transform 0.2s ease;
