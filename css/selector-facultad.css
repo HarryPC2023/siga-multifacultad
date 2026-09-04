@@ -12,7 +12,7 @@
 
 .selector-facultades {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 14px;
   padding: 8px 0 32px;
 }
@@ -22,25 +22,30 @@
   /* sobreescrito inline por cada tarjeta */
   --color-chips: #999999;
   /* sobreescrito inline; normalmente = color-facultad */
+  container-type: inline-size;
+  /* habilita que ícono/sigla escalen en % del ancho REAL de la tarjeta (unidades cqw), no de la pantalla */
   background: var(--paper);
   border: 2px solid var(--color-facultad);
   border-radius: 14px;
   padding: 10px 8px;
-  min-height: 148px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   cursor: pointer;
-  transition: box-shadow 0.15s ease, transform 0.1s ease;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
   grid-column: span 1;
 }
 
 .tarjeta-facultad:hover {
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
 }
 
+/* Sombra fuerte de elevación SOLO al presionar — sensación de volumen,
+   como si la tarjeta sobresaliera del fondo animado de SIGA. Nada de
+   scale-down: el efecto es de "levantarse", no de "hundirse". */
 .tarjeta-facultad:active {
-  transform: scale(0.98);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28), 0 6px 10px rgba(0, 0, 0, 0.18);
+  transform: translateY(-4px);
 }
 
 .tarjeta-facultad.expandida {
@@ -59,8 +64,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: 92px;
-  height: 92px;
+  width: clamp(48px, 40cqw, 96px);
+  height: clamp(48px, 40cqw, 96px);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -68,7 +73,7 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: 20px;
+  font-size: clamp(14px, 9cqw, 22px);
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
