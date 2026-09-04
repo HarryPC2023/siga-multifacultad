@@ -12,8 +12,8 @@
 
 .selector-facultades {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
   padding: 8px 0 32px;
 }
 
@@ -27,9 +27,7 @@
   background: var(--paper);
   border: 2px solid var(--color-facultad);
   border-radius: 14px;
-  padding: 14px 10px;
-  aspect-ratio: 3 / 4;
-  /* fuerza la proporción angosta+alta: el alto se calcula SIEMPRE 33% mayor que el ancho, sin importar cuántas columnas quepan */
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -54,8 +52,6 @@
 .tarjeta-facultad.expandida {
   grid-column: 1 / -1;
   /* ocupa todo el ancho de la fila al expandirse */
-  aspect-ratio: auto;
-  /* el aspect-ratio 3:4 es solo para el estado colapsado — expandida, el alto depende del contenido (chips) */
   cursor: default;
   justify-content: flex-start;
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.12);
@@ -70,8 +66,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: clamp(70px, 62cqw, 160px);
-  height: clamp(70px, 62cqw, 160px);
+  width: clamp(64px, 62cqw, 150px);
+  height: clamp(64px, 62cqw, 150px);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -79,7 +75,7 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: clamp(18px, 13cqw, 32px);
+  font-size: clamp(18px, 14cqw, 30px);
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
