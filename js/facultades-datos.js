@@ -14,7 +14,7 @@ export const FACULTADES = [
     id: "faua",
     sigla: "FAUA",
     nombre: "Facultad de Arquitectura, Urbanismo y Artes",
-    color: "#FE9B01",
+    color: "#C9762E",
     icono: "assets/facultades/faua.png",
     carreras: [
       { id: "arquitectura", nombre: "Arquitectura" },
