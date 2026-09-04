@@ -95,6 +95,7 @@ export const FACULTADES = [
     sigla: "FIIS",
     nombre: "Facultad de Ingeniería Industrial y de Sistemas",
     color: "#09234A",
+    colorAcento: "#3C7CF8",
     icono: "assets/facultades/fiis.png",
     carreras: [
       { id: "industrial", nombre: "Ingeniería Industrial" },

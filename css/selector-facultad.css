@@ -20,11 +20,13 @@
 .tarjeta-facultad {
   --color-facultad: #999999;
   /* sobreescrito inline por cada tarjeta */
+  --color-chips: #999999;
+  /* sobreescrito inline; normalmente = color-facultad */
   background: var(--paper);
   border: 2px solid var(--color-facultad);
   border-radius: 14px;
-  padding: 14px 10px;
-  min-height: 128px;
+  padding: 10px 8px;
+  min-height: 148px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -57,8 +59,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: 72px;
-  height: 72px;
+  width: 92px;
+  height: 92px;
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -66,17 +68,17 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
 }
 
-/* Nombre completo: dos usos distintos.
-   1) Dentro de __detalle (facultades multi-carrera) — visible solo al
-      expandir, alineado a la izquierda junto a los chips.
-   2) Variante --fija (facultades de carrera única) — visible siempre,
-      compacta y centrada bajo la sigla. */
+/* Nombre completo: solo aparece dentro de __detalle, visible al expandir,
+   alineado a la izquierda junto a los chips. Las facultades de carrera
+   única (FIC) no lo muestran nunca — van directo a selección sin pasar
+   por un estado expandido, así que se mantienen igual de compactas que
+   el resto en su estado colapsado. */
 .tarjeta-facultad__nombre {
   font-family: var(--font-body);
   font-size: 12px;
@@ -84,12 +86,6 @@
   margin: 0 0 10px;
   line-height: 1.3;
   text-align: left;
-}
-
-.tarjeta-facultad__nombre--fija {
-  margin: 0;
-  text-align: center;
-  line-height: 1.25;
 }
 
 /* Chevron indicando que se puede expandir — centrado bajo la sigla. No
@@ -126,18 +122,22 @@
   gap: 8px;
 }
 
-/* Chips de carrera: fondo en tinte claro del color de la facultad (nunca
-   texto en color de acento sobre fondo transparente, para que la
-   legibilidad no dependa del fondo con gradiente de SIGA). Cada chip usa
-   un % de mezcla distinto según su posición, para que no se vean todos
-   idénticos dentro de una misma facultad — efecto de degradado sutil que
-   sigue sintiéndose "familia" del mismo color. */
+/* Chips de carrera: fondo en tinte claro del color de ACENTO de la
+   facultad (--color-chips, normalmente = --color-facultad, pero
+   sobreescribible cuando el color real es muy oscuro/desaturado y el
+   tinte resultante se ve gris en vez de con el matiz correcto — ver
+   FIIS en facultades-datos.js). Nunca texto en color de acento sobre
+   fondo transparente, para que la legibilidad no dependa del fondo con
+   gradiente de SIGA. Cada chip usa un % de mezcla distinto según su
+   posición, para que no se vean todos idénticos dentro de una misma
+   facultad — efecto de degradado sutil que sigue sintiéndose "familia"
+   del mismo color. */
 .chip-carrera {
   font-family: var(--font-body);
   font-size: 13px;
   color: var(--ink);
-  background: color-mix(in srgb, var(--color-facultad) 8%, var(--paper));
-  border: 1px solid var(--color-facultad);
+  background: color-mix(in srgb, var(--color-chips) 8%, var(--paper));
+  border: 1px solid var(--color-chips);
   border-radius: 999px;
   padding: 7px 14px;
   cursor: pointer;
@@ -145,23 +145,23 @@
 }
 
 .chip-carrera:nth-child(2) {
-  background: color-mix(in srgb, var(--color-facultad) 16%, var(--paper));
+  background: color-mix(in srgb, var(--color-chips) 16%, var(--paper));
 }
 
 .chip-carrera:nth-child(3) {
-  background: color-mix(in srgb, var(--color-facultad) 24%, var(--paper));
+  background: color-mix(in srgb, var(--color-chips) 24%, var(--paper));
 }
 
 .chip-carrera:nth-child(4) {
-  background: color-mix(in srgb, var(--color-facultad) 32%, var(--paper));
+  background: color-mix(in srgb, var(--color-chips) 32%, var(--paper));
 }
 
 .chip-carrera:nth-child(n + 5) {
-  background: color-mix(in srgb, var(--color-facultad) 32%, var(--paper));
+  background: color-mix(in srgb, var(--color-chips) 32%, var(--paper));
 }
 
 .chip-carrera:hover {
-  background: color-mix(in srgb, var(--color-facultad) 42%, var(--paper));
+  background: color-mix(in srgb, var(--color-chips) 42%, var(--paper));
 }
 
 .chip-carrera:active {
