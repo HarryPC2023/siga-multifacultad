@@ -69,8 +69,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: clamp(48px, 90cqw, 200px);
-  height: clamp(48px, 90cqw, 200px);
+  width: clamp(48px, 120cqw, 200px);
+  height: clamp(48px, 100cqw, 200px);
   flex-shrink: 0;
   object-fit: contain;
 }
