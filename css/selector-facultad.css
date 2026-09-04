@@ -12,7 +12,7 @@
 
 .selector-facultades {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 14px;
   padding: 8px 0 32px;
 }
@@ -27,7 +27,9 @@
   background: var(--paper);
   border: 2px solid var(--color-facultad);
   border-radius: 14px;
-  padding: 10px 8px;
+  padding: 14px 10px;
+  aspect-ratio: 3 / 4;
+  /* fuerza la proporción angosta+alta: el alto se calcula SIEMPRE 33% mayor que el ancho, sin importar cuántas columnas quepan */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -36,23 +38,27 @@
   grid-column: span 1;
 }
 
+/* Sombra fuerte de elevación al pasar el mouse — así se percibe la
+   profundidad ANTES de hacer clic, sin depender de que el clic no
+   dispare el acordeón y "tape" el efecto. */
 .tarjeta-facultad:hover {
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.22), 0 6px 10px rgba(0, 0, 0, 0.14);
+  transform: translateY(-4px);
 }
 
-/* Sombra fuerte de elevación SOLO al presionar — sensación de volumen,
-   como si la tarjeta sobresaliera del fondo animado de SIGA. Nada de
-   scale-down: el efecto es de "levantarse", no de "hundirse". */
 .tarjeta-facultad:active {
-  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.28), 0 6px 10px rgba(0, 0, 0, 0.18);
-  transform: translateY(-4px);
+  box-shadow: 0 20px 36px rgba(0, 0, 0, 0.3), 0 8px 14px rgba(0, 0, 0, 0.2);
+  transform: translateY(-6px);
 }
 
 .tarjeta-facultad.expandida {
   grid-column: 1 / -1;
   /* ocupa todo el ancho de la fila al expandirse */
+  aspect-ratio: auto;
+  /* el aspect-ratio 3:4 es solo para el estado colapsado — expandida, el alto depende del contenido (chips) */
   cursor: default;
   justify-content: flex-start;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.2), 0 6px 10px rgba(0, 0, 0, 0.12);
 }
 
 .tarjeta-facultad__cabecera {
@@ -64,8 +70,8 @@
 }
 
 .tarjeta-facultad__icono {
-  width: clamp(48px, 40cqw, 96px);
-  height: clamp(48px, 40cqw, 96px);
+  width: clamp(60px, 48cqw, 120px);
+  height: clamp(60px, 48cqw, 120px);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -73,7 +79,7 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: clamp(14px, 9cqw, 22px);
+  font-size: clamp(16px, 10cqw, 26px);
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
