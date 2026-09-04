@@ -12,9 +12,12 @@
 
 .selector-facultades {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 15px;
   padding: 8px 0 32px;
+  max-width: 740px;
+  /* con base 170px + gap 15px, esto garantiza SIEMPRE 4 columnas (mínimo necesario: 4×170 + 3×15 = 725px) sin dejar que se estiren de más */
+  margin: 0 auto;
 }
 
 .tarjeta-facultad {
