@@ -78,7 +78,7 @@
 .tarjeta-facultad__sigla {
   font-family: var(--font-heading);
   font-weight: 500;
-  font-size: clamp(14px, 22cqw, 30px);
+  font-size: clamp(14px, 26cqw, 22px);
   color: var(--color-facultad);
   margin: 0;
   letter-spacing: 0.02em;
