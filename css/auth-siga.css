@@ -1,0 +1,194 @@
+/* ===== Modal de login / registro (index.html) ===== */
+.modal-login {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 100;
+  padding: 20px;
+}
+
+.modal-login.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-login-caja {
+  background: #fff;
+  border-radius: 20px;
+  padding: 32px 30px;
+  width: min(380px, 100%);
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+#btnCerrarLogin {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--ink-soft);
+}
+
+.login-tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--brand-azul-tinte);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 20px;
+}
+
+.login-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 9px 12px;
+  font-family: var(--font-nav);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.login-tab.activo {
+  background: #fff;
+  color: var(--brand-morado);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+.btn-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1.5px solid rgba(0, 0, 0, 0.12);
+  background: #fff;
+  border-radius: 999px;
+  padding: 11px 16px;
+  font-family: var(--font-nav);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.btn-google:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.login-separador {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.login-separador::before,
+.login-separador::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.form-login {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.form-login[hidden] {
+  display: none;
+}
+
+.form-login input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: var(--brand-azul-tinte);
+}
+
+.form-login input:focus {
+  outline: none;
+  border-color: var(--brand-morado);
+}
+
+.campo-contrasena {
+  display: flex;
+  align-items: stretch;
+}
+
+.campo-contrasena input {
+  flex: 1;
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.btn-ojo {
+  flex: 0 0 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-left: none;
+  border-top-right-radius: 10px;
+  border-bottom-right-radius: 10px;
+  background: var(--brand-azul-tinte);
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--ink-soft);
+  padding: 0;
+}
+
+.btn-ojo:hover {
+  background: #dfeaff;
+}
+
+.link-olvide {
+  align-self: center;
+  border: none;
+  background: transparent;
+  color: var(--brand-morado);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: -2px;
+}
+
+.login-info {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.login-msg {
+  min-height: 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--brand-morado);
+  margin-top: 14px;
+  margin-bottom: 0;
+}
