@@ -38,11 +38,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     // se crea (o recupera) una sesión anónima sola, en silencio. Sigue
     // habiendo un user_id real para guardar los datos en Supabase, pero
     // nunca aparece pantalla de login.
-    await asegurarSesionAnonima();
+    // El bloque se muestra YA (no después de lograr la sesión), para que
+    // si signInAnonymously() falla, el banner de error sea visible en vez
+    // de quedar escondido dentro de una sección oculta.
     document.getElementById('bloqueSync').classList.add('visible');
     prepararPeriodos('');
-
     inicializarFormularioSync();
+
+    try {
+        await asegurarSesionAnonima();
+    } catch {
+        return; // el banner de error ya quedó mostrado dentro de asegurarSesionAnonima()
+    }
 });
 
 async function asegurarSesionAnonima() {
