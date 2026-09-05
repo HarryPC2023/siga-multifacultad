@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIGA Multifacultad - Conecta tu cuenta</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="css/variables.css">
+    <link rel="stylesheet" href="css/tema-siga.css">
+    <link rel="stylesheet" href="css/auth-siga.css">
+
+    <style>
+        body {
+            margin: 0;
+            background: var(--paper);
+            font-family: var(--font-body);
+            color: var(--ink);
+        }
+
+        .contenedor-principal {
+            max-width: 460px;
+            margin: 0 auto;
+            padding: 28px 20px 60px;
+        }
+
+        .encabezado-sandbox__marca {
+            font-family: var(--font-logo);
+            font-size: 22px;
+            color: var(--brand-morado);
+            margin: 0 0 4px;
+        }
+
+        .encabezado-sandbox__titulo {
+            font-family: var(--font-heading);
+            font-weight: 500;
+            font-size: 20px;
+            margin: 0 0 6px;
+        }
+
+        /* Tarjeta que recuerda qué facultad/carrera se eligió en index.html */
+        .tarjeta-eleccion {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--brand-morado-tinte);
+            border: 1px solid var(--brand-morado);
+            border-radius: 12px;
+            padding: 10px 14px;
+            margin: 18px 0 24px;
+            font-size: 13px;
+        }
+
+        .tarjeta-eleccion__icono {
+            width: 30px;
+            height: 30px;
+            flex-shrink: 0;
+            object-fit: contain;
+        }
+
+        .tarjeta-eleccion__texto {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .tarjeta-eleccion__sigla {
+            font-weight: 600;
+            color: var(--brand-morado);
+            margin: 0;
+        }
+
+        .tarjeta-eleccion__carrera {
+            margin: 0;
+            color: var(--ink-soft);
+        }
+
+        .tarjeta-eleccion__cambiar {
+            border: none;
+            background: none;
+            color: var(--brand-morado);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        section.bloque {
+            display: none;
+        }
+
+        section.bloque.visible {
+            display: block;
+        }
+
+        h2.titulo-bloque {
+            font-family: var(--font-heading);
+            font-weight: 500;
+            font-size: 16px;
+            margin: 0 0 14px;
+        }
+
+        /* Reusa la apariencia de .form-login (definida en auth-siga.css) fuera
+       del modal, para el formulario de sync con Intralú también. */
+        .form-login select {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: var(--font-body);
+            font-size: 14px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            background: var(--brand-azul-tinte);
+            appearance: none;
+        }
+
+        .aviso-nota {
+            font-size: 11px;
+            color: var(--ink-soft);
+            margin: 4px 0 0;
+            line-height: 1.4;
+        }
+
+        .banner-estado {
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 13px;
+            margin-bottom: 14px;
+            display: none;
+        }
+
+        .banner-estado.visible {
+            display: block;
+        }
+
+        .banner-estado.advertencia {
+            background: var(--bg-amarillo);
+            color: var(--acento-amarillo);
+        }
+
+        .banner-estado.error {
+            background: #FBE1E1;
+            color: #B4232A;
+        }
+
+        .banner-estado.exito {
+            background: #E1F5E9;
+            color: #12703E;
+        }
+
+        .progreso-sync {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--brand-morado);
+            margin: 6px 0 14px;
+        }
+
+        .progreso-sync.visible {
+            display: flex;
+        }
+
+        .progreso-sync__spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--brand-morado-tinte);
+            border-top-color: var(--brand-morado);
+            border-radius: 50%;
+            animation: girar 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes girar {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .resumen-final {
+            display: none;
+            text-align: center;
+            padding: 10px 0 4px;
+        }
+
+        .resumen-final.visible {
+            display: block;
+        }
+
+        .resumen-final__check {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #E1F5E9;
+            color: #12703E;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin: 0 auto 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="contenedor-principal">
+        <header>
+            <p class="encabezado-sandbox__marca">SIGA</p>
+            <h1 class="encabezado-sandbox__titulo">Conecta tu cuenta</h1>
+        </header>
+
+        <div class="tarjeta-eleccion" id="tarjetaEleccion">
+            <img class="tarjeta-eleccion__icono" id="eleccionIcono" src="" alt="">
+            <div class="tarjeta-eleccion__texto">
+                <p class="tarjeta-eleccion__sigla" id="eleccionSigla"></p>
+                <p class="tarjeta-eleccion__carrera" id="eleccionCarrera"></p>
+            </div>
+            <button type="button" class="tarjeta-eleccion__cambiar"
+                onclick="window.location.href='index.html'">Cambiar</button>
+        </div>
+
+        <!-- ============ BLOQUE 1: cuenta SIGA (correo/Google) ============ -->
+        <section class="bloque" id="bloqueCuenta">
+            <h2 class="titulo-bloque">Primero, tu cuenta SIGA</h2>
+
+            <div class="login-tabs" id="loginTabs">
+                <button type="button" class="login-tab activo" data-tab="entrar">Entrar</button>
+                <button type="button" class="login-tab" data-tab="crear">Crear cuenta</button>
+            </div>
+
+            <button type="button" class="btn-google" id="btnGoogle">Continuar con Google</button>
+            <div class="login-separador">o con tu correo</div>
+
+            <form class="form-login" id="formEntrar">
+                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
+                <div class="campo-contrasena">
+                    <input type="password" name="contrasena" placeholder="Contraseña" required
+                        autocomplete="current-password">
+                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                </div>
+                <button type="button" class="link-olvide" id="btnOlvide">¿Olvidaste tu contraseña?</button>
+                <button type="submit" class="btn-google"
+                    style="border:none; background:var(--brand-morado); color:#fff;">Entrar</button>
+            </form>
+
+            <form class="form-login" id="formCrear" hidden>
+                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
+                <div class="campo-contrasena">
+                    <input type="password" name="contrasena" placeholder="Contraseña" required
+                        autocomplete="new-password">
+                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                </div>
+                <div class="campo-contrasena">
+                    <input type="password" name="confirmar" placeholder="Confirma tu contraseña" required
+                        autocomplete="new-password">
+                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                </div>
+                <button type="submit" class="btn-google"
+                    style="border:none; background:var(--brand-morado); color:#fff;">Crear cuenta</button>
+            </form>
+
+            <form class="form-login" id="formRecuperar" hidden>
+                <p class="login-info">Te enviamos un enlace para restablecer tu contraseña.</p>
+                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
+                <button type="submit" class="btn-google"
+                    style="border:none; background:var(--brand-morado); color:#fff;">Enviar enlace</button>
+            </form>
+
+            <form class="form-login" id="formNuevaContrasena" hidden>
+                <p class="login-info">Elige tu nueva contraseña.</p>
+                <div class="campo-contrasena">
+                    <input type="password" name="nueva" placeholder="Nueva contraseña" required
+                        autocomplete="new-password">
+                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                </div>
+                <button type="submit" class="btn-google"
+                    style="border:none; background:var(--brand-morado); color:#fff;">Guardar</button>
+            </form>
+
+            <p class="login-msg" id="loginMsg"></p>
+        </section>
+
+        <!-- ============ BLOQUE 2: sync con Intralú ============ -->
+        <section class="bloque" id="bloqueSync">
+            <h2 class="titulo-bloque">Ahora, sincroniza tus cursos</h2>
+
+            <div class="banner-estado" id="bannerSync"></div>
+            <div class="progreso-sync" id="progresoSync">
+                <span class="progreso-sync__spinner"></span>
+                <span id="progresoSyncTexto">Conectando...</span>
+            </div>
+
+            <form class="form-login" id="formSync">
+                <input type="text" id="syncCodigo" placeholder="2023XXXXX" required autocomplete="off"
+                    oninput="this.value = this.value.toUpperCase()">
+                <div class="campo-contrasena">
+                    <input type="password" id="syncPassword" placeholder="Contraseña de Intralú" required
+                        autocomplete="off">
+                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                </div>
+                <select id="syncPeriodo" required></select>
+                <button type="submit" class="btn-google" id="btnSync"
+                    style="border:none; background:var(--brand-morado); color:#fff;">Sincronizar</button>
+                <p class="aviso-nota">Tus credenciales de Intralú se usan solo para esta sincronización y no se guardan.
+                </p>
+            </form>
+
+            <div class="resumen-final" id="resumenFinal">
+                <div class="resumen-final__check">✓</div>
+                <p style="margin:0 0 4px; font-weight:600;">Sincronización lista</p>
+                <p style="margin:0; font-size:13px; color:var(--ink-soft);" id="resumenFinalTexto"></p>
+            </div>
+        </section>
+    </div>
+
+    <script type="module" src="js/login-multifacultad.js"></script>
+</body>
+
+</html>
