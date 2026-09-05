@@ -1,13 +1,9 @@
-// js/login-multifacultad.js — Pantalla de login/sync de siga-multifacultad.
-// Dos bloques secuenciales: 1) cuenta SIGA (correo/Google, vía Supabase
-// sandbox), 2) sincronización con Intralú (notas del periodo elegido +
-// avance curricular completo SOLO la primera vez que el alumno sincroniza
-// algo — ver notas de diseño en la sesión de asesoría).
-import {
-    supabase, obtenerSesion, alCambiarSesion,
-    registrarConCorreo, iniciarSesionConCorreo,
-    recuperarContrasena, establecerNuevaContrasena,
-} from './auth-siga.js';
+// js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
+// Sandbox de prueba (solo Harry) — sin login visible: se usa una sesión
+// anónima de Supabase para tener un user_id real donde guardar los datos,
+// sin pedirle cuenta a nadie. Sincroniza con Intralú: notas del periodo
+// elegido + avance curricular completo SOLO la primera vez.
+import { supabase, obtenerSesion } from './auth-siga.js';
 import { FACULTADES } from './facultades-datos.js';
 
 const CLAVE_SESSION = 'siga_multifacultad_seleccion';
@@ -20,7 +16,6 @@ const BACKEND_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname
     : 'https://siga-multifacultad.onrender.com';
 
 let facultadElegida, carreraElegida;
-let modoFormulario = 'entrar';
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Recupera la elección de facultad/carrera hecha en index.html. Sin
@@ -39,21 +34,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     pintarEleccion();
 
-    // 2. Bloque de cuenta SIGA: si ya hay sesión, saltamos directo al sync.
-    const sesion = await obtenerSesion();
-    mostrarBloqueSegunSesion(sesion);
+    // 2. Sesión: en este sandbox de prueba no se le pide cuenta a nadie —
+    // se crea (o recupera) una sesión anónima sola, en silencio. Sigue
+    // habiendo un user_id real para guardar los datos en Supabase, pero
+    // nunca aparece pantalla de login.
+    await asegurarSesionAnonima();
+    document.getElementById('bloqueSync').classList.add('visible');
+    prepararPeriodos('');
 
-    alCambiarSesion((sesionNueva, evento) => {
-        if (evento === 'PASSWORD_RECOVERY') {
-            mostrarFormulario('nuevaContrasena');
-            return;
-        }
-        if (sesionNueva) mostrarBloqueSegunSesion(sesionNueva);
-    });
-
-    inicializarFormularioCuenta();
     inicializarFormularioSync();
 });
+
+async function asegurarSesionAnonima() {
+    const sesionExistente = await obtenerSesion();
+    if (sesionExistente) return sesionExistente;
+
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) {
+        mostrarBanner('error', 'No se pudo iniciar la sesión de prueba. Recarga la página.');
+        throw error;
+    }
+    return data.session;
+}
 
 function pintarEleccion() {
     document.getElementById('eleccionIcono').src = facultadElegida.icono;
@@ -62,95 +64,8 @@ function pintarEleccion() {
     document.getElementById('eleccionCarrera').textContent = carreraElegida.nombre;
 }
 
-function mostrarBloqueSegunSesion(sesion) {
-    document.getElementById('bloqueCuenta').classList.toggle('visible', !sesion);
-    document.getElementById('bloqueSync').classList.toggle('visible', !!sesion);
-    if (sesion) prepararPeriodos('');
-}
-
 /* ============================================================
-   BLOQUE 1 — Cuenta SIGA
-   ============================================================ */
-function inicializarFormularioCuenta() {
-    document.querySelectorAll('.login-tab').forEach((btn) => {
-        btn.addEventListener('click', () => mostrarFormulario(btn.dataset.tab));
-    });
-    document.getElementById('btnOlvide').addEventListener('click', () => mostrarFormulario('recuperar'));
-
-    document.getElementById('formEntrar').addEventListener('submit', manejarEntrar);
-    document.getElementById('formCrear').addEventListener('submit', manejarCrear);
-    document.getElementById('formRecuperar').addEventListener('submit', manejarRecuperar);
-    document.getElementById('formNuevaContrasena').addEventListener('submit', manejarNuevaContrasena);
-
-    document.querySelectorAll('.btn-ojo').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const input = btn.previousElementSibling;
-            const mostrar = input.type === 'password';
-            input.type = mostrar ? 'text' : 'password';
-            btn.textContent = mostrar ? '🙈' : '👁';
-        });
-    });
-}
-
-function mostrarFormulario(cual) {
-    modoFormulario = cual;
-    ['entrar', 'crear', 'recuperar', 'nuevaContrasena'].forEach((id) => {
-        document.getElementById(`form${id[0].toUpperCase()}${id.slice(1)}`).hidden = id !== cual;
-    });
-    document.querySelectorAll('.login-tab').forEach((btn) => {
-        btn.classList.toggle('activo', btn.dataset.tab === cual);
-    });
-    const mostrarExtras = cual === 'entrar' || cual === 'crear';
-    document.getElementById('loginTabs').style.display = mostrarExtras ? 'flex' : 'none';
-    mostrarMsgCuenta('');
-}
-
-async function manejarEntrar(e) {
-    e.preventDefault();
-    const datos = Object.fromEntries(new FormData(e.target).entries());
-    const { ok, error } = await iniciarSesionConCorreo(datos.correo, datos.contrasena);
-    mostrarMsgCuenta(ok
-        ? '¡Listo! Entrando...'
-        : (error?.message?.includes('Invalid') ? 'Correo o contraseña incorrectos.' : 'No se pudo iniciar sesión.'));
-}
-
-async function manejarCrear(e) {
-    e.preventDefault();
-    const datos = Object.fromEntries(new FormData(e.target).entries());
-    if (datos.contrasena !== datos.confirmar) {
-        mostrarMsgCuenta('Las contraseñas no coinciden.');
-        return;
-    }
-    const { ok, error, requiereConfirmacion } = await registrarConCorreo(datos.correo, datos.contrasena);
-    if (!ok) {
-        mostrarMsgCuenta(error?.message?.toLowerCase().includes('already registered')
-            ? 'Ese correo ya tiene una cuenta. Prueba iniciar sesión.'
-            : 'No se pudo crear la cuenta.');
-        return;
-    }
-    mostrarMsgCuenta(requiereConfirmacion
-        ? 'Cuenta creada. Revisa tu correo para confirmarla.'
-        : '¡Cuenta creada! Entrando...');
-}
-
-async function manejarRecuperar(e) {
-    e.preventDefault();
-    const datos = Object.fromEntries(new FormData(e.target).entries());
-    const { ok } = await recuperarContrasena(datos.correo);
-    mostrarMsgCuenta(ok ? 'Revisa tu correo y sigue el enlace.' : 'No se pudo enviar el enlace.');
-}
-
-async function manejarNuevaContrasena(e) {
-    e.preventDefault();
-    const datos = Object.fromEntries(new FormData(e.target).entries());
-    const { ok } = await establecerNuevaContrasena(datos.nueva);
-    mostrarMsgCuenta(ok ? '¡Contraseña actualizada!' : 'No se pudo actualizar.');
-}
-
-function mostrarMsgCuenta(texto) { document.getElementById('loginMsg').textContent = texto; }
-
-/* ============================================================
-   BLOQUE 2 — Sync con Intralú
+   BLOQUE — Sync con Intralú
    ============================================================ */
 function inicializarFormularioSync() {
     document.getElementById('syncCodigo').addEventListener('input', (e) => prepararPeriodos(e.target.value));

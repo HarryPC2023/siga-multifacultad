@@ -222,65 +222,10 @@
                 onclick="window.location.href='index.html'">Cambiar</button>
         </div>
 
-        <!-- ============ BLOQUE 1: cuenta SIGA (correo/Google) ============ -->
-        <section class="bloque" id="bloqueCuenta">
-            <h2 class="titulo-bloque">Primero, tu cuenta SIGA</h2>
+        <!-- Sesión: se crea sola en segundo plano (anónima) — nunca se le pide
+         nada al alumno aquí. Ver login-multifacultad.js. -->
 
-            <div class="login-tabs" id="loginTabs">
-                <button type="button" class="login-tab activo" data-tab="entrar">Entrar</button>
-                <button type="button" class="login-tab" data-tab="crear">Crear cuenta</button>
-            </div>
-
-            <form class="form-login" id="formEntrar">
-                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
-                <div class="campo-contrasena">
-                    <input type="password" name="contrasena" placeholder="Contraseña" required
-                        autocomplete="current-password">
-                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
-                </div>
-                <button type="button" class="link-olvide" id="btnOlvide">¿Olvidaste tu contraseña?</button>
-                <button type="submit" class="btn-google"
-                    style="border:none; background:var(--brand-morado); color:#fff;">Entrar</button>
-            </form>
-
-            <form class="form-login" id="formCrear" hidden>
-                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
-                <div class="campo-contrasena">
-                    <input type="password" name="contrasena" placeholder="Contraseña" required
-                        autocomplete="new-password">
-                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
-                </div>
-                <div class="campo-contrasena">
-                    <input type="password" name="confirmar" placeholder="Confirma tu contraseña" required
-                        autocomplete="new-password">
-                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
-                </div>
-                <button type="submit" class="btn-google"
-                    style="border:none; background:var(--brand-morado); color:#fff;">Crear cuenta</button>
-            </form>
-
-            <form class="form-login" id="formRecuperar" hidden>
-                <p class="login-info">Te enviamos un enlace para restablecer tu contraseña.</p>
-                <input type="email" name="correo" placeholder="tu@correo.com" required autocomplete="email">
-                <button type="submit" class="btn-google"
-                    style="border:none; background:var(--brand-morado); color:#fff;">Enviar enlace</button>
-            </form>
-
-            <form class="form-login" id="formNuevaContrasena" hidden>
-                <p class="login-info">Elige tu nueva contraseña.</p>
-                <div class="campo-contrasena">
-                    <input type="password" name="nueva" placeholder="Nueva contraseña" required
-                        autocomplete="new-password">
-                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
-                </div>
-                <button type="submit" class="btn-google"
-                    style="border:none; background:var(--brand-morado); color:#fff;">Guardar</button>
-            </form>
-
-            <p class="login-msg" id="loginMsg"></p>
-        </section>
-
-        <!-- ============ BLOQUE 2: sync con Intralú ============ -->
+        <!-- ============ Sync con Intralú ============ -->
         <section class="bloque" id="bloqueSync">
             <h2 class="titulo-bloque">Ahora, sincroniza tus cursos</h2>
 
