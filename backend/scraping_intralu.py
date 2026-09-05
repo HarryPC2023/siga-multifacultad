@@ -10,6 +10,7 @@ from urllib.parse import unquote
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel, Field
 
@@ -183,6 +184,34 @@ _jobs = {}
 _jobs_lock = threading.Lock()
 DURACION_MAXIMA_JOB_SEGUNDOS = 30 * 60  # limpiar jobs viejos tras 30 min
 
+# --------------------------------------------------------------
+# DIAGNÓSTICO TEMPORAL: cuando el login a Intralú falla, guardamos una
+# captura de pantalla + la URL final + un fragmento del HTML, para poder
+# ver DESDE FUERA (sin Shell, que no está disponible en el plan free de
+# Render) en qué página se quedó atascado el navegador. Vive solo en
+# memoria (se pierde si el servidor reinicia) y se limita a los últimos
+# 5 fallos para no consumir RAM de más. Quitar esto una vez resuelto el
+# problema de fondo — es solo para depurar, no debe quedar permanente.
+# --------------------------------------------------------------
+_debug_shots = {}
+_debug_shots_lock = threading.Lock()
+
+
+def _guardar_debug_shot(job_id, page):
+    try:
+        captura = page.screenshot()
+        with _debug_shots_lock:
+            _debug_shots[job_id] = {
+                "screenshot": captura,
+                "url": page.url,
+                "html_snippet": page.content()[:3000],
+            }
+            if len(_debug_shots) > 5:
+                mas_viejo = next(iter(_debug_shots))
+                del _debug_shots[mas_viejo]
+    except Exception:
+        logger.exception("No se pudo guardar la captura de diagnóstico para el job %s", job_id)
+
 
 def simplificar_etiqueta(texto):
     """Normaliza el nombre de una evaluación de Intralú a la MISMA
@@ -277,6 +306,7 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
             try:
                 page.wait_for_url("**/home**", timeout=20000)
             except Exception:
+                _guardar_debug_shot(job_id, page)
                 with _jobs_lock:
                     _jobs[job_id]["status"] = "error"
                     _jobs[job_id]["status_code"] = 401
@@ -541,6 +571,25 @@ def consultar_sync(job_id: str):
             "periodo_actual": job.get("periodo_actual"),
             "periodos": job.get("periodos"),
         }
+
+
+# TEMPORAL — quitar cuando se resuelva el problema de login a Intralú.
+@app.get("/api/debug-screenshot/{job_id}")
+def debug_screenshot(job_id: str):
+    with _debug_shots_lock:
+        shot = _debug_shots.get(job_id)
+    if not shot:
+        raise HTTPException(status_code=404, detail="No hay captura guardada para ese job_id (o el servidor se reinició desde entonces).")
+    return Response(content=shot["screenshot"], media_type="image/png")
+
+
+@app.get("/api/debug-info/{job_id}")
+def debug_info(job_id: str):
+    with _debug_shots_lock:
+        shot = _debug_shots.get(job_id)
+    if not shot:
+        raise HTTPException(status_code=404, detail="No hay info guardada para ese job_id (o el servidor se reinició desde entonces).")
+    return {"url": shot["url"], "html_snippet": shot["html_snippet"]}
 
 
 # ================================================================
