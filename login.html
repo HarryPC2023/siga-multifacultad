@@ -235,12 +235,12 @@
                 <span id="progresoSyncTexto">Conectando...</span>
             </div>
 
-            <form class="form-login" id="formSync">
-                <input type="text" id="syncCodigo" placeholder="2023XXXXX" required autocomplete="off"
-                    oninput="this.value = this.value.toUpperCase()">
+            <form class="form-login" id="formSync" autocomplete="off">
+                <input type="text" id="syncCodigo" name="codigo_uni_intralu" placeholder="2023XXXXX" required
+                    autocomplete="off" oninput="this.value = this.value.toUpperCase()">
                 <div class="campo-contrasena">
-                    <input type="password" id="syncPassword" placeholder="Contraseña de Intralú" required
-                        autocomplete="off">
+                    <input type="password" id="syncPassword" name="clave_intralu" placeholder="Contraseña de Intralú"
+                        required autocomplete="new-password">
                     <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
                 </div>
                 <select id="syncPeriodo" required></select>
