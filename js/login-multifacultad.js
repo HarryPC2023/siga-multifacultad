@@ -5,7 +5,7 @@
 // algo — ver notas de diseño en la sesión de asesoría).
 import {
     supabase, obtenerSesion, alCambiarSesion,
-    registrarConCorreo, iniciarSesionConCorreo, iniciarSesionConGoogle,
+    registrarConCorreo, iniciarSesionConCorreo,
     recuperarContrasena, establecerNuevaContrasena,
 } from './auth-siga.js';
 import { FACULTADES } from './facultades-datos.js';
@@ -77,11 +77,6 @@ function inicializarFormularioCuenta() {
     });
     document.getElementById('btnOlvide').addEventListener('click', () => mostrarFormulario('recuperar'));
 
-    document.getElementById('btnGoogle').addEventListener('click', async () => {
-        const { error } = await iniciarSesionConGoogle();
-        if (error) mostrarMsgCuenta('No se pudo iniciar con Google. Intenta de nuevo.');
-    });
-
     document.getElementById('formEntrar').addEventListener('submit', manejarEntrar);
     document.getElementById('formCrear').addEventListener('submit', manejarCrear);
     document.getElementById('formRecuperar').addEventListener('submit', manejarRecuperar);
@@ -107,8 +102,6 @@ function mostrarFormulario(cual) {
     });
     const mostrarExtras = cual === 'entrar' || cual === 'crear';
     document.getElementById('loginTabs').style.display = mostrarExtras ? 'flex' : 'none';
-    document.getElementById('btnGoogle').style.display = mostrarExtras ? 'flex' : 'none';
-    document.querySelector('.login-separador').style.display = mostrarExtras ? 'flex' : 'none';
     mostrarMsgCuenta('');
 }
 
