@@ -17,17 +17,23 @@ function crearTarjetaHTML(facultad) {
     )
     .join("");
 
+  // Colapsada: solo ícono + sigla, siempre — incluidas las facultades de
+  // carrera única (FIC), que nunca pasan por un estado expandido. El
+  // nombre completo y las carreras solo aparecen al expandir.
   return `
-    <div class="tarjeta-facultad" style="--color-facultad:${facultad.color}" data-facultad-id="${facultad.id}" data-carrera-unica="${esCarreraUnica}" role="button" tabindex="0" aria-expanded="false">
+    <div class="tarjeta-facultad" style="--color-facultad:${facultad.color};--color-chips:${facultad.colorAcento || facultad.color}" data-facultad-id="${facultad.id}" data-carrera-unica="${esCarreraUnica}" role="button" tabindex="0" aria-expanded="false">
       <div class="tarjeta-facultad__cabecera">
         <img class="tarjeta-facultad__icono" src="${facultad.icono}" alt="Ícono de ${facultad.sigla}" loading="lazy">
-        <div class="tarjeta-facultad__texto">
-          <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
-          <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
-        </div>
+        <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
         ${esCarreraUnica ? "" : crearIconoChevron()}
       </div>
-      ${esCarreraUnica ? "" : `<div class="tarjeta-facultad__carreras">${chipsCarreras}</div>`}
+      ${esCarreraUnica
+      ? ""
+      : `<div class="tarjeta-facultad__detalle">
+               <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
+               <div class="tarjeta-facultad__carreras">${chipsCarreras}</div>
+             </div>`
+    }
     </div>
   `;
 }
@@ -53,9 +59,8 @@ function manejarSeleccionCarrera(facultadId, carreraId) {
   const carrera = facultad?.carreras.find((c) => c.id === carreraId);
   if (!facultad || !carrera) return;
 
-  // Guardamos la selección para que la próxima pantalla (login/sync, aún
-  // por conectar) sepa qué facultad+carrera eligió el alumno sin tener
-  // que volver a preguntarle.
+  // Guardamos la selección para que la pantalla de login/sync sepa qué
+  // facultad+carrera eligió el alumno sin tener que volver a preguntarle.
   sessionStorage.setItem(
     CLAVE_SESSION,
     JSON.stringify({ facultadId: facultad.id, carreraId: carrera.id })
