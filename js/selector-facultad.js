@@ -17,23 +17,17 @@ function crearTarjetaHTML(facultad) {
     )
     .join("");
 
-  // Colapsada: solo ícono + sigla, siempre — incluidas las facultades de
-  // carrera única (FIC), que nunca pasan por un estado expandido. El
-  // nombre completo y las carreras solo aparecen al expandir.
   return `
-    <div class="tarjeta-facultad" style="--color-facultad:${facultad.color};--color-chips:${facultad.colorAcento || facultad.color}" data-facultad-id="${facultad.id}" data-carrera-unica="${esCarreraUnica}" role="button" tabindex="0" aria-expanded="false">
+    <div class="tarjeta-facultad" style="--color-facultad:${facultad.color}" data-facultad-id="${facultad.id}" data-carrera-unica="${esCarreraUnica}" role="button" tabindex="0" aria-expanded="false">
       <div class="tarjeta-facultad__cabecera">
         <img class="tarjeta-facultad__icono" src="${facultad.icono}" alt="Ícono de ${facultad.sigla}" loading="lazy">
-        <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
+        <div class="tarjeta-facultad__texto">
+          <p class="tarjeta-facultad__sigla">${facultad.sigla}</p>
+          <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
+        </div>
         ${esCarreraUnica ? "" : crearIconoChevron()}
       </div>
-      ${esCarreraUnica
-      ? ""
-      : `<div class="tarjeta-facultad__detalle">
-               <p class="tarjeta-facultad__nombre">${facultad.nombre}</p>
-               <div class="tarjeta-facultad__carreras">${chipsCarreras}</div>
-             </div>`
-    }
+      ${esCarreraUnica ? "" : `<div class="tarjeta-facultad__carreras">${chipsCarreras}</div>`}
     </div>
   `;
 }
@@ -67,15 +61,9 @@ function manejarSeleccionCarrera(facultadId, carreraId) {
     JSON.stringify({ facultadId: facultad.id, carreraId: carrera.id })
   );
 
-  mostrarAvisoSeleccion(facultad, carrera);
-}
-
-function mostrarAvisoSeleccion(facultad, carrera) {
-  const aviso = document.getElementById("avisoSeleccion");
-  if (!aviso) return;
-  aviso.innerHTML = `✅ Elegiste <strong>${facultad.sigla} — ${carrera.nombre}</strong>. (Siguiente paso: pantalla de login/sync con Intralú — todavía no conectada en este sandbox.)`;
-  aviso.classList.add("visible");
-  aviso.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  // Ya existe la pantalla de login/sync — saltamos directo, sin el aviso
+  // temporal de antes (que era solo un stub mientras no existía nada más).
+  window.location.href = "login.html";
 }
 
 export function inicializarSelectorFacultades(contenedorId = "gridFacultades") {
