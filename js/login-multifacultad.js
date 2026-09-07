@@ -3,10 +3,18 @@
 // anónima de Supabase para tener un user_id real donde guardar los datos,
 // sin pedirle cuenta a nadie. Sincroniza con Intralú: notas del periodo
 // elegido + avance curricular completo SOLO la primera vez.
+//
+// Desde que INTRALU exige reCAPTCHA en su login, ya no se piden código ni
+// contraseña acá: se usa el "SIGA Conector" (extensión de Chrome, la misma
+// que ya usa la producción real de SIGA) para tomar prestada la sesión que
+// el alumno ya abrió manualmente en INTRALU. Ver pingExtensionSiga() /
+// pedirCookiesExtensionSiga() más abajo — mismo contrato exacto que
+// intranotas.js de producción.
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { FACULTADES } from './facultades-datos.js';
 
 const CLAVE_SESSION = 'siga_multifacultad_seleccion';
+const EXTENSION_SIGA_URL = 'https://github.com/HarryPC2023/siga-conector/releases/download/v1.0.0/siga-conector-extension.zip';
 
 // Local en tu compu (Jekyll) usa el backend local; en cualquier otro caso
 // (GitHub Pages) usa la URL real de Render — mismo patrón que ya usas en
@@ -42,15 +50,63 @@ document.addEventListener('DOMContentLoaded', async () => {
     // si signInAnonymously() falla, el banner de error sea visible en vez
     // de quedar escondido dentro de una sección oculta.
     document.getElementById('bloqueSync').classList.add('visible');
-    prepararPeriodos('');
-    inicializarFormularioSync();
 
+    let user;
     try {
-        await asegurarSesionAnonima();
+        const sesion = await asegurarSesionAnonima();
+        user = sesion.user;
     } catch {
         return; // el banner de error ya quedó mostrado dentro de asegurarSesionAnonima()
     }
+
+    // 3. ¿Ya sabemos su periodo de ingreso? Orden de prioridad para no
+    // preguntar de más:
+    //    a) periodo_ingreso ya guardado -> se usa directo.
+    //    b) codigo_estudiante ya guardado (ej. lo puso en el módulo Perfil,
+    //       que hoy no existe en este sandbox pero podría en el futuro) ->
+    //       se deriva el año de los primeros 4 dígitos, sin preguntar nada.
+    //    c) ninguno de los dos -> se pregunta una sola vez.
+    const { data: perfil } = await supabase
+        .from('perfiles_usuario')
+        .select('periodo_ingreso, codigo_estudiante')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+    if (perfil?.periodo_ingreso) {
+        arrancarBloqueSync(perfil.periodo_ingreso);
+    } else if (perfil?.codigo_estudiante) {
+        const periodoDerivado = await derivarYGuardarPeriodoDesdeCodigo(user.id, perfil.codigo_estudiante);
+        if (periodoDerivado) {
+            arrancarBloqueSync(periodoDerivado);
+        } else {
+            document.getElementById('bloqueSync').classList.remove('visible');
+            mostrarBloquePeriodoIngreso(user.id);
+        }
+    } else {
+        document.getElementById('bloqueSync').classList.remove('visible');
+        mostrarBloquePeriodoIngreso(user.id);
+    }
 });
+
+/* El código UNI empieza con el año de ingreso (ej. "20231059E" -> 2023).
+   Si ya está guardado (puesto en otro módulo, ej. Perfil), no hace falta
+   preguntar el periodo de ingreso — se deriva y se guarda solo. Se asume
+   tipo "-1" porque para acotar el selector de periodos solo importa el
+   año, nunca el tipo exacto (ver prepararPeriodosSync). Si el código no
+   calza con el formato esperado, devuelve null para que el flujo caiga
+   de vuelta a preguntar. */
+async function derivarYGuardarPeriodoDesdeCodigo(userId, codigoEstudiante) {
+    const anio = parseInt(String(codigoEstudiante).trim().slice(0, 4), 10);
+    const anioValido = !Number.isNaN(anio) && anio >= 2000 && anio <= new Date().getFullYear();
+    if (!anioValido) return null;
+
+    const periodoDerivado = `${anio}-1`;
+    await supabase.from('perfiles_usuario').upsert({
+        user_id: userId,
+        periodo_ingreso: periodoDerivado,
+    }, { onConflict: 'user_id' });
+    return periodoDerivado;
+}
 
 async function asegurarSesionAnonima() {
     const sesionExistente = await obtenerSesion();
@@ -64,6 +120,61 @@ async function asegurarSesionAnonima() {
     return data.session;
 }
 
+/* ============================================================
+   BLOQUE — Periodo de ingreso (una sola vez por alumno)
+   ============================================================ */
+function mostrarBloquePeriodoIngreso(userId) {
+    const bloque = document.getElementById('bloquePeriodoIngreso');
+    bloque.classList.add('visible');
+
+    const hoy = new Date();
+    let anio = hoy.getFullYear();
+    let periodo = hoy.getMonth() >= 7 ? 2 : 1;
+    const opciones = [];
+    for (let i = 0; i < 20; i++) {
+        opciones.push({ value: `${anio}-${periodo}`, label: `${anio}-${periodo}` });
+        if (periodo === 1) { periodo = 2; anio -= 1; } else { periodo = 1; }
+    }
+
+    const selector = inicializarSelectPersonalizado({
+        triggerId: 'ingresoTrigger', textoId: 'ingresoTriggerTexto',
+        listaId: 'ingresoLista', valorId: 'ingresoValor',
+        opciones,
+    });
+
+    document.getElementById('btnContinuarIngreso').addEventListener('click', async () => {
+        const elegido = document.getElementById('ingresoValor').value;
+        if (!elegido) return;
+
+        const btn = document.getElementById('btnContinuarIngreso');
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+
+        const { error } = await supabase.from('perfiles_usuario').upsert({
+            user_id: userId,
+            facultad: facultadElegida.sigla,
+            carrera: carreraElegida.nombre,
+            periodo_ingreso: elegido,
+        }, { onConflict: 'user_id' });
+
+        if (error) {
+            btn.disabled = false;
+            btn.textContent = 'Continuar';
+            mostrarBanner('error', 'No se pudo guardar tu periodo de ingreso. Intenta de nuevo.');
+            return;
+        }
+
+        bloque.classList.remove('visible');
+        arrancarBloqueSync(elegido);
+    });
+}
+
+function arrancarBloqueSync(periodoIngreso) {
+    document.getElementById('bloqueSync').classList.add('visible');
+    prepararPeriodosSync(periodoIngreso);
+    inicializarFormularioSync();
+}
+
 function pintarEleccion() {
     document.getElementById('eleccionIcono').src = facultadElegida.icono;
     document.getElementById('eleccionIcono').alt = `Ícono de ${facultadElegida.sigla}`;
@@ -72,28 +183,18 @@ function pintarEleccion() {
 }
 
 /* ============================================================
-   BLOQUE — Sync con Intralú
+   BLOQUE — Sync con Intralú (vía SIGA Conector)
    ============================================================ */
 function inicializarFormularioSync() {
-    document.getElementById('syncCodigo').addEventListener('input', (e) => prepararPeriodos(e.target.value));
-    document.querySelectorAll('#formSync .btn-ojo').forEach((btn) => {
-        btn.addEventListener('click', () => {
-            const input = btn.previousElementSibling;
-            const mostrar = input.type === 'password';
-            input.type = mostrar ? 'text' : 'password';
-            btn.textContent = mostrar ? '🙈' : '👁';
-        });
-    });
     document.getElementById('formSync').addEventListener('submit', manejarSync);
 }
 
-/* Genera el dropdown de periodos acotado por el año de ingreso que viene
-   en el código UNI (ej. "2023XXXXX" -> no ofrece periodos antes de 2023-1).
-   Si el código todavía no tiene 4 dígitos válidos al inicio, usa un rango
-   genérico hacia atrás para que el selector nunca quede vacío mientras el
-   alumno todavía está escribiendo. */
-function prepararPeriodos(codigoParcial) {
-    const anioIngreso = parseInt((codigoParcial || '').slice(0, 4), 10);
+/* Genera el dropdown de periodos acotado por el año del periodo de
+   ingreso guardado en el perfil (ej. "2023-1" -> no ofrece periodos
+   antes de 2023-1). Usa selector-personalizado, igual que el resto de
+   SIGA — nada de <select> nativo. */
+function prepararPeriodosSync(periodoIngreso) {
+    const anioIngreso = parseInt((periodoIngreso || '').slice(0, 4), 10);
     const anioValido = !Number.isNaN(anioIngreso) && anioIngreso >= 2000 && anioIngreso <= new Date().getFullYear();
 
     const hoy = new Date();
@@ -103,15 +204,72 @@ function prepararPeriodos(codigoParcial) {
     const opciones = [];
     const limiteInferior = anioValido ? anioIngreso : anio - 8;
     while (anio > limiteInferior || (anio === limiteInferior && periodo >= 1)) {
-        opciones.push(`${anio}-${periodo}`);
+        opciones.push({ value: `${anio}-${periodo}`, label: `${anio}-${periodo}` });
         if (periodo === 1) { periodo = 2; anio -= 1; } else { periodo = 1; }
         if (opciones.length >= 30) break; // tope de seguridad
     }
 
-    const select = document.getElementById('syncPeriodo');
-    const valorPrevio = select.value;
-    select.innerHTML = opciones.map((p) => `<option value="${p}">${p}</option>`).join('');
-    if (opciones.includes(valorPrevio)) select.value = valorPrevio;
+    inicializarSelectPersonalizado({
+        triggerId: 'syncPeriodoTrigger', textoId: 'syncPeriodoTriggerTexto',
+        listaId: 'syncPeriodoLista', valorId: 'syncPeriodoValor',
+        opciones,
+    });
+}
+
+/* Le pregunta a la extensión 'SIGA Conector' (si está instalada) si
+   está presente, vía postMessage — el content script de la extensión
+   contesta con SIGA_EXT_PONG casi al instante. Si no hay extensión
+   instalada, nadie contesta y se resuelve false tras el timeout.
+   Mismo contrato exacto que intranotas.js de producción. */
+function pingExtensionSiga(timeoutMs = 700) {
+    return new Promise((resolve) => {
+        let resuelto = false;
+        function onMessage(event) {
+            if (event.source !== window || event.data?.type !== 'SIGA_EXT_PONG') return;
+            resuelto = true;
+            window.removeEventListener('message', onMessage);
+            resolve(true);
+        }
+        window.addEventListener('message', onMessage);
+        window.postMessage({ type: 'SIGA_EXT_PING' }, window.location.origin);
+        setTimeout(() => {
+            if (resuelto) return;
+            window.removeEventListener('message', onMessage);
+            resolve(false);
+        }, timeoutMs);
+    });
+}
+
+/* Le pide a la extensión las cookies de sesión de Intralú. Devuelve
+   { ok:true, sessionCookie, xsrfToken } si el alumno tiene sesión
+   activa, o { ok:false, motivo } si no. */
+function pedirCookiesExtensionSiga(timeoutMs = 3000) {
+    return new Promise((resolve) => {
+        let resuelto = false;
+        function onMessage(event) {
+            if (event.source !== window || event.data?.type !== 'SIGA_EXT_COOKIES') return;
+            resuelto = true;
+            window.removeEventListener('message', onMessage);
+            resolve(event.data);
+        }
+        window.addEventListener('message', onMessage);
+        window.postMessage({ type: 'SIGA_EXT_REQUEST_COOKIES' }, window.location.origin);
+        setTimeout(() => {
+            if (resuelto) return;
+            window.removeEventListener('message', onMessage);
+            resolve({ ok: false, motivo: 'timeout' });
+        }, timeoutMs);
+    });
+}
+
+function mostrarEstadoExtension(html, tipo) {
+    const el = document.getElementById('sync-intralu-estado-extension');
+    el.style.display = 'block';
+    el.style.background = tipo === 'error' ? '#FBE1E1' : '#e0f2fe';
+    el.innerHTML = html;
+}
+function ocultarEstadoExtension() {
+    document.getElementById('sync-intralu-estado-extension').style.display = 'none';
 }
 
 function mostrarBanner(tipo, texto) {
@@ -133,31 +291,61 @@ function ocultarProgreso() {
 async function manejarSync(e) {
     e.preventDefault();
     ocultarBanner();
+    ocultarEstadoExtension();
     document.getElementById('resumenFinal').classList.remove('visible');
 
-    const codigo = document.getElementById('syncCodigo').value.trim();
-    const password = document.getElementById('syncPassword').value;
-    const periodoElegido = document.getElementById('syncPeriodo').value;
+    const periodoElegido = document.getElementById('syncPeriodoValor').value;
+    if (!periodoElegido) { mostrarBanner('error', 'Elige un periodo para sincronizar.'); return; }
+
     const btnSync = document.getElementById('btnSync');
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { mostrarBanner('error', 'Tu sesión expiró. Recarga la página.'); return; }
 
     btnSync.disabled = true;
+
+    // Paso 1: ¿está instalado el conector?
+    btnSync.textContent = 'Verificando conector...';
+    const hayExtension = await pingExtensionSiga();
+    if (!hayExtension) {
+        mostrarEstadoExtension(
+            `⚠️ No detectamos el conector de SIGA en tu navegador.
+             <br><a href="${EXTENSION_SIGA_URL}" target="_blank" style="color:var(--brand-morado); font-weight:600;">Agrégalo aquí</a> y vuelve a presionar Sincronizar.`,
+            'error'
+        );
+        btnSync.disabled = false;
+        btnSync.textContent = 'Sincronizar';
+        return;
+    }
+
+    // Paso 2: ¿tiene sesión activa en Intralú?
+    btnSync.textContent = 'Verificando sesión...';
+    const cookies = await pedirCookiesExtensionSiga();
+    if (!cookies.ok) {
+        mostrarEstadoExtension(
+            `⚠️ Abre INTRALU, inicia sesión y vuelve aquí para sincronizar.
+             <br><a href="https://alumnos.uni.edu.pe/login" target="_blank" style="color:var(--brand-morado); font-weight:600;">Abrir INTRALU</a>`,
+            'error'
+        );
+        btnSync.disabled = false;
+        btnSync.textContent = 'Sincronizar';
+        return;
+    }
+
     btnSync.textContent = 'Sincronizando...';
 
     try {
-        // Paso 1: notas del periodo elegido (siempre).
+        // Paso 3: notas del periodo elegido (siempre), con la sesión prestada.
         mostrarProgreso(`Cargando notas de ${periodoElegido}...`);
         const periodoNormalizado = periodoElegido.replace('-', '');
-        const resultadoNotas = await sincronizarNotas(codigo, password, periodoNormalizado);
+        const resultadoNotas = await sincronizarNotas(cookies, periodoNormalizado);
 
         const datosDelPeriodo = resultadoNotas.periodos?.[periodoNormalizado];
         if (!datosDelPeriodo || !datosDelPeriodo.cursos?.length) {
             mostrarBanner('advertencia', `Este periodo aún no tiene datos en Intralú. Puede que todavía no se abra.`);
         }
 
-        // Paso 2: avance curricular, SOLO si es la primera sincronización de
+        // Paso 4: avance curricular, SOLO si es la primera sincronización de
         // este alumno (evita repetir un scrape pesado que no cambia seguido).
         const { count } = await supabase
             .from('avance_curricular')
@@ -167,12 +355,12 @@ async function manejarSync(e) {
         let cursosAvance = null;
         if (!count) {
             mostrarProgreso('Cargando tu avance curricular...');
-            cursosAvance = await sincronizarAvanceCurricular(codigo, password);
+            cursosAvance = await sincronizarAvanceCurricular(cookies);
         }
 
         // Guardado en Supabase.
         mostrarProgreso('Guardando...');
-        await guardarPerfil(user.id, codigo, periodoNormalizado);
+        await guardarPerfil(user.id, periodoNormalizado);
         if (datosDelPeriodo?.cursos?.length) {
             await guardarNotasPeriodo(user.id, periodoNormalizado, datosDelPeriodo.cursos);
             await guardarFormulasCache(periodoNormalizado, datosDelPeriodo.cursos);
@@ -194,18 +382,22 @@ async function manejarSync(e) {
     } finally {
         btnSync.disabled = false;
         btnSync.textContent = 'Sincronizar';
-        document.getElementById('syncPassword').value = '';
     }
 }
 
 /* Inicia el job de /api/sync-intralu y espera (polling cada 3s) a que
    termine — mismo patrón que ya usas en intranotas.js. Pide un solo
-   periodo (el elegido), no todo el historial. */
-async function sincronizarNotas(codigo, password, periodoNormalizado) {
+   periodo (el elegido), no todo el historial. Ya no manda código ni
+   contraseña: manda la sesión que prestó el conector. */
+async function sincronizarNotas(cookies, periodoNormalizado) {
     const respInicio = await fetch(`${BACKEND_URL}/api/sync-intralu`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo, password, periodo: periodoNormalizado }),
+        body: JSON.stringify({
+            session_cookie: cookies.sessionCookie,
+            xsrf_token: cookies.xsrfToken,
+            periodo: periodoNormalizado,
+        }),
     });
     const dataInicio = await respInicio.json();
     if (!respInicio.ok) throw new Error(dataInicio.detail || 'No se pudo conectar con Intralú.');
@@ -226,22 +418,24 @@ async function sincronizarNotas(codigo, password, periodoNormalizado) {
 }
 
 /* /api/avance-curricular es síncrona (login + PDF en un solo request),
-   no usa job_id. */
-async function sincronizarAvanceCurricular(codigo, password) {
+   no usa job_id. También va con cookies ahora. */
+async function sincronizarAvanceCurricular(cookies) {
     const resp = await fetch(`${BACKEND_URL}/api/avance-curricular`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ codigo, password }),
+        body: JSON.stringify({
+            session_cookie: cookies.sessionCookie,
+            xsrf_token: cookies.xsrfToken,
+        }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || 'No se pudo traer tu avance curricular.');
     return Array.isArray(data) ? data : data.cursos || [];
 }
 
-async function guardarPerfil(userId, codigo, periodoNormalizado) {
+async function guardarPerfil(userId, periodoNormalizado) {
     await supabase.from('perfiles_usuario').upsert({
         user_id: userId,
-        codigo_estudiante: codigo,
         facultad: facultadElegida.sigla,
         carrera: carreraElegida.nombre,
         periodo_actual: periodoNormalizado,

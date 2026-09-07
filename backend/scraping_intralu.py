@@ -1,4 +1,3 @@
-import datetime
 import io
 import logging
 import re
@@ -58,19 +57,32 @@ MAX_SYNCS_SIMULTANEOS = 1
 _semaforo_sync = threading.Semaphore(MAX_SYNCS_SIMULTANEOS)
 
 
-class LoginRequest(BaseModel):
-    codigo: str = Field(..., examples=["20231059E"], description="Tu código de estudiante UNI (el mismo de Intralú).")
-    password: str = Field(..., examples=["tu_contraseña_de_intralu"], description="Tu contraseña de Intralú. Nunca se guarda.")
-    periodo: str | None = Field(
-        default=None,
+class LoginPorCookieRequest(BaseModel):
+    """INTRALU exige reCAPTCHA en su login desde mediados de 2026, así que ya
+    no se automatiza código+contraseña — en vez de eso, el 'SIGA Conector'
+    (extensión de Chrome) le presta al backend la sesión que el alumno ya
+    abrió manualmente (resolviendo el reCAPTCHA él mismo). Mismo esquema que
+    ya usa la producción real de SIGA."""
+    session_cookie: str = Field(..., description="Cookie 'intranet_alumno_session' de INTRALU, tomada por el conector.")
+    xsrf_token: str = Field(..., description="Cookie 'XSRF-TOKEN' de INTRALU, tomada por el conector.")
+    periodo: str = Field(
+        ...,
         examples=["20262"],
         description=(
-            "OPCIONAL. Déjalo vacío/null para sincronizar TODOS tus periodos "
-            "desde tu año de ingreso. Para uno solo, usa el formato crudo "
-            "AÑO+TIPO ('20262' = 2026-2, '20263' = verano 2026-3) — también "
-            "acepta el formato con guion ('2026-2')."
+            "Periodo específico a sincronizar, formato crudo AÑO+TIPO "
+            "('20262' = 2026-2) — también acepta el formato con guion "
+            "('2026-2'). El sandbox multifacultad siempre pide UN periodo, "
+            "nunca 'todos' (a diferencia de producción)."
         ),
     )
+
+
+class LoginRequest(BaseModel):
+    """Sigue usándose SOLO para /api/sync-horarios (Matrícula UNI), que es
+    un sistema de login totalmente distinto a INTRALU y que, por ahora, no
+    tiene reCAPTCHA."""
+    codigo: str = Field(..., examples=["20231059E"], description="Tu código de estudiante UNI.")
+    password: str = Field(..., examples=["tu_contraseña"], description="Tu contraseña. Nunca se guarda.")
 
 
 def normalizar_periodo(periodo):
@@ -111,52 +123,6 @@ def etiquetar_periodo(cod):
         if tipo == "3":
             return f"{anio}-3"
     return cod
-
-
-def determinar_periodo_actual():
-    """Replica la lógica de generarPeriodosDisponibles() en intranotas.js:
-    calcula el periodo (año, tipo) más reciente que YA debería existir
-    según la fecha de HOY, para no intentar revisar un ciclo que ni
-    siquiera ha empezado (ej. no buscar '26-3' antes de enero 2027)."""
-    hoy = datetime.date.today()
-    anio = hoy.year
-    if hoy.month <= 2:
-        return anio - 1, 3  # enero-febrero: verano, cierra el año académico anterior
-    if hoy.month <= 7:
-        return anio, 1  # marzo-julio
-    return anio, 2  # agosto-diciembre
-
-
-def extraer_anio_ingreso(codigo):
-    """El código UNI empieza con el año de ingreso (ej. '20231059E' -> 2023).
-    Si el código no calza con ese formato, usamos un rango conservador de
-    7 años hacia atrás en vez de fallar."""
-    try:
-        anio = int(str(codigo).strip()[:4])
-        anio_actual = datetime.date.today().year
-        if 2000 <= anio <= anio_actual:
-            return anio
-    except (ValueError, TypeError):
-        pass
-    return datetime.date.today().year - 7
-
-
-def construir_rango_periodos(anio_ingreso, cantidad_maxima=40):
-    """Genera los códigos de periodo desde el más reciente hacia atrás,
-    deteniéndose apenas se cruza el año de ingreso — así un alumno que
-    entró en 2023 ya no hace perder tiempo revisando 2019 o 2020."""
-    anio, tipo = determinar_periodo_actual()
-    periodos = []
-    for _ in range(cantidad_maxima):
-        if anio < anio_ingreso:
-            break
-        periodos.append(f"{anio}{tipo}")
-        if tipo > 1:
-            tipo -= 1
-        else:
-            tipo = 3
-            anio -= 1
-    return periodos
 
 
 def _limpiar_jobs_viejos():
@@ -273,7 +239,50 @@ def _extraer_formulas_curso(page):
     return formula_practicas_raw, formula_final_raw
 
 
-def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
+DOMINIO_INTRALU = "alumnos.uni.edu.pe"
+
+
+def _login_por_cookie(context, session_cookie, xsrf_token):
+    """Inyecta en el contexto de Playwright la sesión que el alumno ya abrió
+    manualmente en INTRALU (resolviendo el reCAPTCHA él mismo) — el 'SIGA
+    Conector' se la pasó al frontend, y el frontend nos la reenvía acá tal
+    cual. Nunca se vuelve a tocar la pantalla de login ni el reCAPTCHA.
+
+    Devuelve una `page` ya "autenticada". Si la sesión venía vencida o
+    inválida, INTRALU redirige a /login al primer intento de entrar a una
+    página protegida — eso es lo que se detecta para avisar con un mensaje
+    claro en vez de un error genérico."""
+    context.add_cookies([
+        {
+            "name": "intranet_alumno_session",
+            "value": session_cookie,
+            "domain": DOMINIO_INTRALU,
+            "path": "/",
+            "httpOnly": True,
+            "secure": True,
+        },
+        {
+            "name": "XSRF-TOKEN",
+            "value": xsrf_token,
+            "domain": DOMINIO_INTRALU,
+            "path": "/",
+            "secure": True,
+        },
+    ])
+    page = context.new_page()
+    page.goto(f"https://{DOMINIO_INTRALU}/home", wait_until="domcontentloaded")
+    if "/login" in page.url:
+        raise SesionIntraluExpirada()
+    return page
+
+
+class SesionIntraluExpirada(Exception):
+    """La cookie que prestó el conector ya no sirve — o expiró, o el
+    alumno cerró sesión en INTRALU después de abrir el conector."""
+    pass
+
+
+def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
     """Corre en un hilo aparte (no bloquea ningún request HTTP). Guarda
     el progreso y el resultado final en _jobs[job_id] para que el
     frontend los recoja haciendo polling contra GET /api/sync-intralu/{job_id}."""
@@ -295,38 +304,23 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            context = browser.new_context()
 
-            # 1. Login dinámico
-            page.goto("https://alumnos.uni.edu.pe/login", wait_until="domcontentloaded")
-            page.fill("#txt-codigo", codigo)
-            page.fill("#txt-password", password)
-            page.click("#btn-login")
-
+            # 1. Sesión prestada por el conector (sin tocar login/reCAPTCHA)
             try:
-                page.wait_for_url("**/home**", timeout=20000)
-            except Exception:
-                _guardar_debug_shot(job_id, page)
+                page = _login_por_cookie(context, session_cookie, xsrf_token)
+            except SesionIntraluExpirada:
                 with _jobs_lock:
                     _jobs[job_id]["status"] = "error"
                     _jobs[job_id]["status_code"] = 401
-                    _jobs[job_id]["detail"] = "Código o contraseña incorrectos en Intralú."
-                logger.info("Job %s: ❌ LOGIN FALLIDO tras %.1fs", job_id, time.time() - inicio)
+                    _jobs[job_id]["detail"] = "Tu sesión de INTRALU expiró o cerraste sesión. Vuelve a iniciar sesión en INTRALU e intenta de nuevo."
+                logger.info("Job %s: ❌ COOKIE INVÁLIDA/VENCIDA tras %.1fs", job_id, time.time() - inicio)
                 return
 
-            # 2. Rango de periodos: uno solo si el usuario pidió un ciclo
-            # específico, o acotado por el año de ingreso (del código) y el
-            # periodo real más reciente si pidió "todos".
-            if periodo_especifico:
-                periodos = [periodo_especifico]
-                logger.info("Job %s: revisando solo el periodo %s", job_id, periodo_especifico)
-            else:
-                anio_ingreso = extraer_anio_ingreso(codigo)
-                periodos = construir_rango_periodos(anio_ingreso)
-                logger.info(
-                    "Job %s: revisando %d periodos (desde el ingreso %d)",
-                    job_id, len(periodos), anio_ingreso,
-                )
+            # 2. El sandbox multifacultad siempre sincroniza un periodo
+            # específico a la vez (no existe la opción de "todos" acá).
+            periodos = [periodo_especifico]
+            logger.info("Job %s: revisando solo el periodo %s", job_id, periodo_especifico)
 
             # 3. Recorrer cada periodo del rango
             for periodo in periodos:
@@ -527,7 +521,7 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico=None):
 
 
 @app.post("/api/sync-intralu")
-def iniciar_sync(credentials: LoginRequest):
+def iniciar_sync(credentials: LoginPorCookieRequest):
     """Responde AL INSTANTE con un job_id — no espera a que termine el
     scraping. La sincronización real corre en un hilo aparte."""
     _limpiar_jobs_viejos()
@@ -542,7 +536,7 @@ def iniciar_sync(credentials: LoginRequest):
 
     hilo = threading.Thread(
         target=_ejecutar_sync,
-        args=(job_id, credentials.codigo, credentials.password, credentials.periodo),
+        args=(job_id, credentials.session_cookie, credentials.xsrf_token, credentials.periodo),
         daemon=True,
     )
     hilo.start()
@@ -766,12 +760,16 @@ def _parsear_avance_curricular_pdf(pdf_bytes):
     return cursos
 
 
+class AvanceCurricularPorCookieRequest(BaseModel):
+    session_cookie: str = Field(..., description="Cookie 'intranet_alumno_session' de INTRALU, tomada por el conector.")
+    xsrf_token: str = Field(..., description="Cookie 'XSRF-TOKEN' de INTRALU, tomada por el conector.")
+
+
 @app.post("/api/avance-curricular")
-def obtener_avance_curricular(credentials: LoginRequest):
-    """Login + descarga autenticada del PDF de Avance Curricular +
-    parseo. El campo `periodo` de LoginRequest se ignora acá (no aplica
-    a este endpoint, solo está en el modelo porque se comparte con
-    /api/sync-intralu)."""
+def obtener_avance_curricular(credentials: AvanceCurricularPorCookieRequest):
+    """Descarga autenticada del PDF de Avance Curricular + parseo, usando
+    la sesión prestada por el conector (sin volver a tocar el login ni el
+    reCAPTCHA)."""
     adquirido = _semaforo_sync.acquire(blocking=False)
     if not adquirido:
         raise HTTPException(
@@ -784,17 +782,15 @@ def obtener_avance_curricular(credentials: LoginRequest):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-
-            page.goto("https://alumnos.uni.edu.pe/login", wait_until="domcontentloaded")
-            page.fill("#txt-codigo", credentials.codigo)
-            page.fill("#txt-password", credentials.password)
-            page.click("#btn-login")
+            context = browser.new_context()
 
             try:
-                page.wait_for_url("**/home**", timeout=20000)
-            except Exception:
-                raise HTTPException(status_code=401, detail="Código o contraseña incorrectos en Intralú.")
+                page = _login_por_cookie(context, credentials.session_cookie, credentials.xsrf_token)
+            except SesionIntraluExpirada:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Tu sesión de INTRALU expiró o cerraste sesión. Vuelve a iniciar sesión en INTRALU e intenta de nuevo."
+                )
 
             # Descarga autenticada del PDF: reusa las cookies de sesión de
             # este mismo browser context (page.request comparte cookies con

@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/tema-siga.css">
     <link rel="stylesheet" href="css/auth-siga.css">
+    <link rel="stylesheet" href="css/selector-personalizado.css">
 
     <style>
         body {
@@ -101,20 +102,6 @@
             font-weight: 500;
             font-size: 16px;
             margin: 0 0 14px;
-        }
-
-        /* Reusa la apariencia de .form-login (definida en auth-siga.css) fuera
-       del modal, para el formulario de sync con Intralú también. */
-        .form-login select {
-            width: 100%;
-            box-sizing: border-box;
-            font-family: var(--font-body);
-            font-size: 14px;
-            padding: 12px 14px;
-            border-radius: 10px;
-            border: 1px solid rgba(0, 0, 0, 0.15);
-            background: var(--brand-azul-tinte);
-            appearance: none;
         }
 
         .aviso-nota {
@@ -225,7 +212,31 @@
         <!-- Sesión: se crea sola en segundo plano (anónima) — nunca se le pide
          nada al alumno aquí. Ver login-multifacultad.js. -->
 
-        <!-- ============ Sync con Intralú ============ -->
+        <!-- ============ Periodo de ingreso (solo primera vez) ============
+             Se muestra únicamente si perfiles_usuario.periodo_ingreso todavía
+             no existe para este user_id. Una vez guardado, esta pantalla no
+             vuelve a aparecer. -->
+        <section class="bloque" id="bloquePeriodoIngreso">
+            <h2 class="titulo-bloque">Antes de sincronizar, cuéntanos</h2>
+            <p class="aviso-nota" style="margin:0 0 16px; font-size:13px;">
+                ¿En qué periodo ingresaste a la universidad? Con esto te mostramos los periodos correctos para
+                sincronizar tus notas.
+            </p>
+
+            <div class="form-login" style="margin-bottom:16px;">
+                <button type="button" class="select-custom-trigger" id="ingresoTrigger"
+                    aria-haspopup="listbox" aria-expanded="false">
+                    <span id="ingresoTriggerTexto">Elige tu periodo de ingreso</span>
+                </button>
+                <ul class="select-custom-lista" id="ingresoLista" role="listbox" hidden></ul>
+                <input type="hidden" id="ingresoValor">
+            </div>
+
+            <button type="button" class="btn-google" id="btnContinuarIngreso"
+                style="border:none; background:var(--brand-morado); color:#fff; width:100%;">Continuar</button>
+        </section>
+
+        <!-- ============ Sync con Intralú (vía SIGA Conector) ============ -->
         <section class="bloque" id="bloqueSync">
             <h2 class="titulo-bloque">Ahora, sincroniza tus cursos</h2>
 
@@ -236,17 +247,22 @@
             </div>
 
             <form class="form-login" id="formSync" autocomplete="off">
-                <input type="text" id="syncCodigo" name="codigo_uni_intralu" placeholder="2023XXXXX" required
-                    autocomplete="off" oninput="this.value = this.value.toUpperCase()">
-                <div class="campo-contrasena">
-                    <input type="password" id="syncPassword" name="clave_intralu" placeholder="Contraseña de Intralú"
-                        required autocomplete="new-password">
-                    <button type="button" class="btn-ojo" aria-label="Mostrar contraseña">👁</button>
+                <div id="sync-intralu-estado-extension"
+                    style="display:none; padding:10px 12px; border-radius:8px; font-size:0.8rem; margin-bottom:6px; line-height:1.6;">
                 </div>
-                <select id="syncPeriodo" required></select>
+
+                <button type="button" class="select-custom-trigger" id="syncPeriodoTrigger"
+                    aria-haspopup="listbox" aria-expanded="false">
+                    <span id="syncPeriodoTriggerTexto">Elige el periodo a sincronizar</span>
+                </button>
+                <ul class="select-custom-lista" id="syncPeriodoLista" role="listbox" hidden></ul>
+                <input type="hidden" id="syncPeriodoValor">
+
                 <button type="submit" class="btn-google" id="btnSync"
                     style="border:none; background:var(--brand-morado); color:#fff;">Sincronizar</button>
-                <p class="aviso-nota">Tus credenciales de Intralú se usan solo para esta sincronización y no se guardan.
+                <p class="aviso-nota">
+                    🔄 Mantén tu sesión de INTRALU activa mientras se sincroniza.<br>
+                    ✅ Cuando termine, puedes cerrar INTRALU sin problema.
                 </p>
             </form>
 
@@ -258,6 +274,7 @@
         </section>
     </div>
 
+    <script src="js/selector-personalizado.js"></script>
     <script type="module" src="js/login-multifacultad.js"></script>
 </body>
 
