@@ -182,11 +182,16 @@ function pintarEleccion() {
     document.getElementById('eleccionCarrera').textContent = carreraElegida.nombre;
 }
 
+let jobIdActual = null;
+let syncCancelada = false;
+let controladorAvance = null;
+
 /* ============================================================
    BLOQUE — Sync con Intralú (vía SIGA Conector)
    ============================================================ */
 function inicializarFormularioSync() {
     document.getElementById('formSync').addEventListener('submit', manejarSync);
+    document.getElementById('btnCancelarSync').addEventListener('click', cancelarSyncEnCurso);
 }
 
 /* Genera el dropdown de periodos acotado por el año del periodo de
@@ -293,11 +298,14 @@ async function manejarSync(e) {
     ocultarBanner();
     ocultarEstadoExtension();
     document.getElementById('resumenFinal').classList.remove('visible');
+    syncCancelada = false;
+    jobIdActual = null;
 
     const periodoElegido = document.getElementById('syncPeriodoValor').value;
     if (!periodoElegido) { mostrarBanner('error', 'Elige un periodo para sincronizar.'); return; }
 
     const btnSync = document.getElementById('btnSync');
+    const btnCancelar = document.getElementById('btnCancelarSync');
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { mostrarBanner('error', 'Tu sesión expiró. Recarga la página.'); return; }
@@ -333,6 +341,7 @@ async function manejarSync(e) {
     }
 
     btnSync.textContent = 'Sincronizando...';
+    btnCancelar.style.display = 'block'; // recién ahora hay algo real que cancelar
 
     try {
         // Paso 3: notas del periodo elegido (siempre), con la sesión prestada.
@@ -347,6 +356,8 @@ async function manejarSync(e) {
 
         // Paso 4: avance curricular, SOLO si es la primera sincronización de
         // este alumno (evita repetir un scrape pesado que no cambia seguido).
+        if (syncCancelada) throw new Error('CANCELADO');
+
         const { count } = await supabase
             .from('avance_curricular')
             .select('id', { count: 'exact', head: true })
@@ -354,7 +365,6 @@ async function manejarSync(e) {
 
         let cursosAvance = null;
         if (!count) {
-            mostrarProgreso('Cargando tu avance curricular...');
             cursosAvance = await sincronizarAvanceCurricular(cookies);
         }
 
@@ -372,16 +382,39 @@ async function manejarSync(e) {
         ocultarProgreso();
         if (datosDelPeriodo?.cursos?.length) {
             document.getElementById('resumenFinalTexto').textContent =
-                `${datosDelPeriodo.cursos.length} curso(s) en ${periodoElegido}` +
-                (cursosAvance?.length ? `, ${cursosAvance.length} cursos en tu avance curricular.` : '.');
+                `${datosDelPeriodo.cursos.length} curso(s) sincronizado(s) en ${periodoElegido}.`;
             document.getElementById('resumenFinal').classList.add('visible');
         }
     } catch (err) {
         ocultarProgreso();
-        mostrarBanner('error', err.message || 'No pudimos conectar con la página de Intralú. Probablemente está caída o en mantenimiento ahora mismo. No es un error de SIGA.');
+        if (err.message === 'CANCELADO') {
+            mostrarBanner('advertencia', 'Sincronización cancelada.');
+        } else {
+            mostrarBanner('error', err.message || 'No pudimos conectar con la página de Intralú. Probablemente está caída o en mantenimiento ahora mismo. No es un error de SIGA.');
+        }
     } finally {
         btnSync.disabled = false;
         btnSync.textContent = 'Sincronizar';
+        btnCancelar.style.display = 'none';
+        jobIdActual = null;
+        controladorAvance = null;
+        syncCancelada = false;
+    }
+}
+
+/* Cancela una sincronización en curso: avisa al backend (para que suelte
+   el semáforo y no siga gastando el único slot de scraping del plan
+   gratuito de Render) y corta cualquier fetch en curso del lado del
+   cliente. El bucle de polling / el fetch de avance curricular recogen
+   `syncCancelada` y terminan solos con el error especial 'CANCELADO',
+   que el catch de arriba trata como cancelación, no como falla real. */
+function cancelarSyncEnCurso() {
+    syncCancelada = true;
+    if (jobIdActual) {
+        fetch(`${BACKEND_URL}/api/sync-intralu/${jobIdActual}/cancelar`, { method: 'POST' }).catch(() => { });
+    }
+    if (controladorAvance) {
+        controladorAvance.abort();
     }
 }
 
@@ -401,16 +434,20 @@ async function sincronizarNotas(cookies, periodoNormalizado) {
     });
     const dataInicio = await respInicio.json();
     if (!respInicio.ok) throw new Error(dataInicio.detail || 'No se pudo conectar con Intralú.');
+    jobIdActual = dataInicio.job_id;
 
     const inicio = Date.now();
     const LIMITE_MS = 5 * 60 * 1000;
     while (true) {
+        if (syncCancelada) throw new Error('CANCELADO');
         await new Promise((resolve) => setTimeout(resolve, 3000));
+        if (syncCancelada) throw new Error('CANCELADO');
         if (Date.now() - inicio > LIMITE_MS) throw new Error('La sincronización está tardando demasiado. Intenta de nuevo.');
 
         const resp = await fetch(`${BACKEND_URL}/api/sync-intralu/${dataInicio.job_id}`);
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.detail || 'Ocurrió un error al sincronizar.');
+        if (data.status === 'cancelado') throw new Error('CANCELADO');
         if (data.status === 'listo') return data;
 
         mostrarProgreso(`Cargando notas de ${periodoNormalizado}...`);
@@ -418,8 +455,13 @@ async function sincronizarNotas(cookies, periodoNormalizado) {
 }
 
 /* /api/avance-curricular es síncrona (login + PDF en un solo request),
-   no usa job_id. También va con cookies ahora. */
+   no usa job_id. Usa AbortController porque, al no tener job/polling, es
+   la única forma de cortarla del lado del cliente si se cancela — el
+   scraping del lado del servidor puede seguir un rato más hasta que note
+   que ya nadie espera la respuesta (limitación conocida, aceptable
+   porque este endpoint es rápido: un login + una descarga de PDF). */
 async function sincronizarAvanceCurricular(cookies) {
+    controladorAvance = new AbortController();
     const resp = await fetch(`${BACKEND_URL}/api/avance-curricular`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -427,6 +469,10 @@ async function sincronizarAvanceCurricular(cookies) {
             session_cookie: cookies.sessionCookie,
             xsrf_token: cookies.xsrfToken,
         }),
+        signal: controladorAvance.signal,
+    }).catch((err) => {
+        if (err.name === 'AbortError') throw new Error('CANCELADO');
+        throw err;
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.detail || 'No se pudo traer tu avance curricular.');

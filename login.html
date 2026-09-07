@@ -224,8 +224,8 @@
             </p>
 
             <div class="form-login" style="margin-bottom:16px;">
-                <button type="button" class="select-custom-trigger" id="ingresoTrigger"
-                    aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" class="select-custom-trigger" id="ingresoTrigger" aria-haspopup="listbox"
+                    aria-expanded="false">
                     <span id="ingresoTriggerTexto">Elige tu periodo de ingreso</span>
                 </button>
                 <ul class="select-custom-lista" id="ingresoLista" role="listbox" hidden></ul>
@@ -251,15 +251,19 @@
                     style="display:none; padding:10px 12px; border-radius:8px; font-size:0.8rem; margin-bottom:6px; line-height:1.6;">
                 </div>
 
-                <button type="button" class="select-custom-trigger" id="syncPeriodoTrigger"
-                    aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" class="select-custom-trigger" id="syncPeriodoTrigger" aria-haspopup="listbox"
+                    aria-expanded="false">
                     <span id="syncPeriodoTriggerTexto">Elige el periodo a sincronizar</span>
                 </button>
                 <ul class="select-custom-lista" id="syncPeriodoLista" role="listbox" hidden></ul>
                 <input type="hidden" id="syncPeriodoValor">
 
-                <button type="submit" class="btn-google" id="btnSync"
-                    style="border:none; background:var(--brand-morado); color:#fff;">Sincronizar</button>
+                <div style="display:flex; gap:10px;">
+                    <button type="submit" class="btn-google" id="btnSync"
+                        style="flex:1; border:none; background:var(--brand-morado); color:#fff;">Sincronizar</button>
+                    <button type="button" id="btnCancelarSync"
+                        style="display:none; flex:1; border:1px solid var(--brand-morado); background:#fff; color:var(--brand-morado); border-radius:10px; font-weight:600; cursor:pointer;">Cancelar</button>
+                </div>
                 <p class="aviso-nota">
                     🔄 Mantén tu sesión de INTRALU activa mientras se sincroniza.<br>
                     ✅ Cuando termine, puedes cerrar INTRALU sin problema.

@@ -282,6 +282,14 @@ class SesionIntraluExpirada(Exception):
     pass
 
 
+class _SyncCancelada(Exception):
+    """El alumno presionó 'Cancelar' desde el frontend (ej. eligió mal el
+    periodo, o simplemente ya no quiere esperar). Se revisa entre cada
+    curso, no solo entre periodos, para que cancelar corte rápido incluso
+    a mitad de un ciclo con muchos cursos."""
+    pass
+
+
 def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
     """Corre en un hilo aparte (no bloquea ningún request HTTP). Guarda
     el progreso y el resultado final en _jobs[job_id] para que el
@@ -377,6 +385,10 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
                 MAX_INTENTOS_NOTAS = 2
                 cursos_lista = []
                 for c_info in cursos_temp:
+                    with _jobs_lock:
+                        if _jobs[job_id].get("cancelado"):
+                            raise _SyncCancelada()
+
                     logger.info(
                         "Job %s:   -> %s (%s)", job_id, c_info["cod_curso"], periodo,
                     )
@@ -504,6 +516,10 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
                 job_id, duracion, len(data_por_periodo),
             )
 
+    except _SyncCancelada:
+        with _jobs_lock:
+            _jobs[job_id]["status"] = "cancelado"
+        logger.info("Job %s: 🛑 CANCELADO por el usuario tras %.1fs", job_id, time.time() - inicio)
     except Exception:
         logger.exception("Job %s: error durante la sincronización con Intralú", job_id)
         with _jobs_lock:
@@ -532,6 +548,7 @@ def iniciar_sync(credentials: LoginPorCookieRequest):
             "status": "en_progreso",
             "creado_en": time.time(),
             "periodo_actual": None,
+            "cancelado": False,
         }
 
     hilo = threading.Thread(
@@ -544,10 +561,26 @@ def iniciar_sync(credentials: LoginPorCookieRequest):
     return {"job_id": job_id}
 
 
+@app.post("/api/sync-intralu/{job_id}/cancelar")
+def cancelar_sync(job_id: str):
+    """El frontend llama esto cuando el alumno presiona 'Cancelar'. Solo
+    levanta la bandera — el hilo de _ejecutar_sync la revisa entre cada
+    curso y se detiene solo, soltando el semáforo. No hay nada que
+    "matar" a la fuerza: Playwright sigue corriendo dentro de ese hilo
+    hasta el próximo punto de chequeo."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="No se encontró esa sincronización (puede haber expirado).")
+        job["cancelado"] = True
+    logger.info("Job %s: solicitud de cancelación recibida", job_id)
+    return {"status": "cancelando"}
+
+
 @app.get("/api/sync-intralu/{job_id}")
 def consultar_sync(job_id: str):
     """El frontend llama esto cada pocos segundos hasta que status
-    sea 'listo' (o falle con un error)."""
+    sea 'listo', 'cancelado' (no es error) o falle con un error real."""
     with _jobs_lock:
         job = _jobs.get(job_id)
         if not job:
