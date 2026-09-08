@@ -119,8 +119,33 @@ function calcularCurso(curso) {
     return { pp, notaFinal, formula, valores };
 }
 
-function estadoCurso(notaFinal) {
-    if (notaFinal === null) return { texto: 'Pendiente', clase: 'badge-pendiente' };
+/* Un periodo pasado NUNCA debería quedar con notas a medias — si eso
+   pasa, es señal de un problema de sync, no de que "todavía no suben
+   notas". Solo el periodo actual puede estar legítimamente incompleto.
+   Reglas de cierre real de UNI: el periodo 1 (marzo-julio) cierra fin de
+   julio; el periodo 2 (agosto-diciembre) cierra fin de diciembre. */
+function periodoEstaAbierto(periodoConGuion) {
+    const [anioStr, tipoStr] = periodoConGuion.split('-');
+    const anio = parseInt(anioStr, 10);
+    const tipo = parseInt(tipoStr, 10);
+    const hoy = new Date();
+    const anioActual = hoy.getFullYear();
+    const mesActual = hoy.getMonth() + 1; // 1-12
+
+    if (anio > anioActual) return true; // no debería pasar, pero no lo tratamos como "vencido"
+    if (anio < anioActual) return false;
+
+    if (tipo === 1) return mesActual <= 7;   // marzo-julio
+    if (tipo === 2) return mesActual >= 8;   // agosto-diciembre
+    return true; // verano (tipo 3): caso borde, no lo bloqueamos por ahora
+}
+
+function estadoCurso(notaFinal, periodoConGuion) {
+    if (notaFinal === null) {
+        return periodoEstaAbierto(periodoConGuion)
+            ? { texto: 'Pendiente', clase: 'badge-pendiente' }
+            : { texto: 'Sin datos', clase: 'badge-critico' };
+    }
     if (notaFinal >= UMBRAL_APROBACION) return { texto: 'Aprobado', clase: 'badge-aprobado' };
     if (notaFinal >= 7) return { texto: 'En riesgo', clase: 'badge-riesgo' };
     return { texto: 'Crítico', clase: 'badge-critico' };
@@ -136,7 +161,7 @@ function renderizarCursos() {
 
     cursos.forEach((curso, idx) => {
         const { pp, notaFinal } = calcularCurso(curso);
-        const estado = estadoCurso(notaFinal);
+        const estado = estadoCurso(notaFinal, periodoActivo);
         if (notaFinal !== null && curso.creditos) {
             sumaPonderada += notaFinal * curso.creditos;
             sumaCreditos += curso.creditos;
@@ -234,14 +259,16 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
     if (valorHeader) valorHeader.textContent = notaFinal ?? '--';
     const badge = cuerpo.parentElement.querySelector('.badge');
     if (badge) {
-        const estado = estadoCurso(notaFinal);
+        const estado = estadoCurso(notaFinal, periodoActivo);
         badge.textContent = estado.texto;
         badge.className = `badge ${estado.clase}`;
     }
 
     const caja = cuerpo.querySelector('.caja-necesito');
     if (!formula || !formula.formula_final_raw) {
-        caja.innerHTML = `<p class="aviso-sin-formula">INTRALU todavía no publica la fórmula de este curso. En cuanto la publique y vuelvas a sincronizar, aparece acá el cálculo de "qué nota necesito".</p>`;
+        caja.innerHTML = periodoEstaAbierto(periodoActivo)
+            ? `<p class="aviso-sin-formula">INTRALU todavía no publica la fórmula de este curso. En cuanto la publique y vuelvas a sincronizar, aparece acá el cálculo de "qué nota necesito".</p>`
+            : `<p class="aviso-sin-formula">Este periodo ya cerró pero no se guardó la fórmula de este curso. Vuelve a sincronizar este periodo — si sigue igual, avísale a Harry.</p>`;
         return;
     }
 
