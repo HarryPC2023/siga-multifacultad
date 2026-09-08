@@ -220,7 +220,7 @@ def simplificar_etiqueta(texto):
         return "EF"
     if "EXAMEN SUSTITUTORIO" in t:
         return "ES"
-    return t
+    return None  # no calza con nada conocido -> se descarta (ej. nombres de compañeros de grupo, filas de otra tabla)
 
 
 def _extraer_formulas_curso(page):
@@ -446,14 +446,15 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
                                         # Prácticas Calificadas no estaban llegando.
                                         nom_e = (c[0].text_content() or "").strip()
                                         not_e = (c[1].text_content() or "").strip()
-                                        if nom_e and not nom_e.isdigit():
+                                        etiqueta = simplificar_etiqueta(nom_e) if nom_e else None
+                                        if etiqueta and not nom_e.isdigit():
                                             try:
                                                 val_n = float(not_e)
                                             except ValueError:
                                                 val_n = None
                                             evaluaciones.append(
                                                 {
-                                                    "etiqueta": simplificar_etiqueta(nom_e),
+                                                    "etiqueta": etiqueta,
                                                     "n_intralu": extraer_n_intralu(nom_e),
                                                     "nota": val_n,
                                                 }
