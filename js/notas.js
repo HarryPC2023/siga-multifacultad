@@ -4,9 +4,9 @@
 // motor de fórmulas genérico (formula-engine.js) sobre la fórmula cruda
 // que trae cada curso desde INTRALU — sin ningún catálogo por curso.
 import { supabase, obtenerSesion } from './auth-siga.js';
-import { evaluarFormula, calcularNotaMinimaNecesaria } from './formula-engine.js';
+import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 
-const UMBRAL_APROBACION = 10.5;
+const UMBRAL_APROBACION = 9.5; // truncado a 1 decimal >= 9.5 redondea a 10, la nota mínima aprobatoria real de UNI
 
 let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, nombre_curso, creditos, componentes, seccion}, ... ] }
 let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas_raw, formula_final_raw}
@@ -111,9 +111,11 @@ function calcularCurso(curso) {
 
     let notaFinal = null;
     try {
-        notaFinal = formula.formula_final_raw
-            ? evaluarFormula(formula.formula_final_raw, { ...valores, PP: pp })
-            : null;
+        if (formula.formula_final_raw) {
+            const conSustituto = aplicarSustitutorio({ ...valores, PP: pp });
+            const notaFinalCruda = evaluarFormula(formula.formula_final_raw, conSustituto);
+            notaFinal = truncarNota(notaFinalCruda);
+        }
     } catch { notaFinal = null; }
 
     return { pp, notaFinal, formula, valores };
@@ -166,7 +168,7 @@ function renderizarCursos() {
             sumaPonderada += notaFinal * curso.creditos;
             sumaCreditos += curso.creditos;
         }
-        if (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico') {
+        if (notaFinal !== null && (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico')) {
             enRiesgo.push(`${curso.nombre_curso || curso.codigo_curso} — ${notaFinal}`);
         }
 
@@ -251,7 +253,7 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
     const { pp, notaFinal, formula, valores } = calcularCurso(curso);
 
     cuerpo.querySelector('.prom-pc').innerHTML = pp !== null
-        ? `Prom. PC: <strong>${pp}</strong>`
+        ? `Prom. PC: <strong>${pp.toFixed(2)}</strong>`
         : '';
 
     // Actualiza también la cabecera de la card sin re-renderizar toda la lista

@@ -15,15 +15,16 @@
 function normalizarFormula(raw) {
     // "2.EF" -> "2*EF" (coeficiente por variable). Ojo: NO toca "0.5"
     // (decimal real), porque ahí lo que sigue al punto es un dígito,
-    // no una letra.
-    return String(raw)
-        .replace(/(\d+)\.(?=[A-Za-z])/g, '$1*')
-        .replace(/(\d)\s*([A-Za-z])/g, '$1*$2'); // "2N1" -> "2*N1", por si acaso
+    // no una letra. (Ya NO insertamos "*" entre dígito y letra sueltos:
+    // eso destrozaba "K2MIN" convirtiéndolo en "K2*MIN".)
+    return String(raw).replace(/(\d+)\.(?=[A-Za-z])/g, '$1*');
 }
 
 function tokenizar(expr) {
     const tokens = [];
-    const re = /\s*(MIN|[A-Za-z]+\d*|\d+(?:\.\d+)?|[()+\-*/,])\s*/g;
+    // OJO con el orden: "K\d+MIN" debe probarse ANTES que el patrón
+    // genérico de identificador, si no "K2MIN" se parte en "K2" + "MIN".
+    const re = /\s*(K\d+MIN|MIN|[A-Za-z]+\d*|\d+(?:\.\d+)?|[()+\-*/,])\s*/g;
     let m;
     let pos = 0;
     while (pos < expr.length) {
@@ -54,14 +55,21 @@ function crearParser(tokens, valores) {
             tomar();
             return v;
         }
-        if (t === 'MIN') {
+        if (t === 'MIN' || /^K\d+MIN$/.test(t)) {
             tomar();
-            if (tomar() !== '(') throw new Error("MIN( mal formado en la fórmula.");
+            const esKMin = t !== 'MIN';
+            const n = esKMin ? parseInt(t.match(/^K(\d+)MIN$/)[1], 10) : 1;
+            if (tomar() !== '(') throw new Error(`${t}( mal formado en la fórmula.`);
             const args = [expresion()];
             while (ver() === ',') { tomar(); args.push(expresion()); }
-            if (tomar() !== ')') throw new Error("Falta cerrar MIN(...) en la fórmula.");
+            if (tomar() !== ')') throw new Error(`Falta cerrar ${t}(...) en la fórmula.`);
             if (args.some((a) => a === null)) return null; // falta algún dato aún
-            return Math.min(...args);
+            const ordenados = [...args].sort((a, b) => a - b);
+            // MIN normal = el más bajo (equivale a K1MIN). KnMIN = SUMA de
+            // los n valores más bajos (así lo define Intralú: con 8 notas
+            // de laboratorio y K2MIN, descarta las 2 peores sumándolas
+            // para restarlas, no promedia ni toma una sola).
+            return ordenados.slice(0, n).reduce((acc, v) => acc + v, 0);
         }
         if (/^\d/.test(t)) { tomar(); return parseFloat(t); }
         if (/^[A-Za-z]/.test(t)) {
@@ -97,27 +105,50 @@ function crearParser(tokens, valores) {
     return { expresion, terminado: () => i >= tokens.length };
 }
 
+/* INTRALU nunca menciona el ES en el texto de la fórmula, pero SIEMPRE
+   reemplaza al menor entre EP y EF si el alumno rindió el sustitutorio
+   — es una regla no escrita, no algo que la fórmula exprese. Se aplica
+   solo antes de evaluar la Nota Final, nunca afecta el cálculo de PP. */
+function aplicarSustitutorio(valores) {
+    if (valores.ES === null || valores.ES === undefined) return valores;
+    const candidatos = ['EP', 'EF'].filter((k) => k in valores && valores[k] !== null && valores[k] !== undefined);
+    if (!candidatos.length) return valores;
+    const menor = candidatos.reduce((a, b) => (valores[a] <= valores[b] ? a : b));
+    return { ...valores, [menor]: valores.ES };
+}
+
+/* INTRALU trunca a 1 decimal (no redondea) el resultado final — un
+   9.861 calculado da 9.8, no 9.9. Confirmado contra un caso real. */
+function truncarNota(valor) {
+    return valor === null ? null : Math.floor(valor * 10) / 10;
+}
+
 /* Evalúa una fórmula cruda de Intralú con los valores disponibles.
    `valores` es un objeto ej. { N1: 17, N2: 18, N3: null, PP: 14.2, EP: 12 }.
-   Si falta algún valor necesario, devuelve null (no "adivina" nada). */
+   Si falta algún valor necesario, devuelve null (no "adivina" nada).
+   Devuelve el valor completo sin redondear — quien llama decide cuándo
+   truncar (la Nota Final se trunca, valores intermedios como PP no
+   tienen por qué). */
 function evaluarFormula(raw, valores) {
     const normalizada = normalizarFormula(raw);
     const tokens = tokenizar(normalizada);
     const parser = crearParser(tokens, valores);
     const resultado = parser.expresion();
     if (!parser.terminado()) throw new Error("Sobraron símbolos al final de la fórmula.");
-    return resultado === null ? null : Math.round(resultado * 100) / 100;
+    return resultado;
 }
 
 /* "¿Qué nota necesito?" — en vez de resolver la fórmula algebraicamente,
    prueba valores del EF (o ES) por búsqueda binaria hasta encontrar el
    mínimo que hace que la Nota Final llegue al umbral de aprobar. Funciona
    con CUALQUIER fórmula cruda, porque solo la evalúa, no la interpreta. */
-function calcularNotaMinimaNecesaria({ formulaPP, formulaFinal, valoresBase, variableIncognita, umbral = 10.5 }) {
+function calcularNotaMinimaNecesaria({ formulaPP, formulaFinal, valoresBase, variableIncognita, umbral = 9.5 }) {
     function notaFinalCon(valorIncognita) {
         const valoresConIncognita = { ...valoresBase, [variableIncognita]: valorIncognita };
         const pp = formulaPP ? evaluarFormula(formulaPP, valoresConIncognita) : valoresBase.PP;
-        return evaluarFormula(formulaFinal, { ...valoresConIncognita, PP: pp });
+        const conSustituto = aplicarSustitutorio({ ...valoresConIncognita, PP: pp });
+        const notaFinal = evaluarFormula(formulaFinal, conSustituto);
+        return notaFinal === null ? null : truncarNota(notaFinal);
     }
 
     const notaCon20 = notaFinalCon(20);
@@ -133,4 +164,4 @@ function calcularNotaMinimaNecesaria({ formulaPP, formulaFinal, valoresBase, var
     return { posible: true, notaMinima: Math.ceil(hi * 100) / 100 };
 }
 
-export { evaluarFormula, calcularNotaMinimaNecesaria, normalizarFormula };
+export { evaluarFormula, calcularNotaMinimaNecesaria, normalizarFormula, aplicarSustitutorio, truncarNota };
