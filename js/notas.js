@@ -6,7 +6,7 @@
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 
-const UMBRAL_APROBACION = 9.5; // truncado a 1 decimal >= 9.5 redondea a 10, la nota mínima aprobatoria real de UNI
+const UMBRAL_APROBACION = 10.5;
 
 let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, nombre_curso, creditos, componentes, seccion}, ... ] }
 let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas_raw, formula_final_raw}
@@ -148,6 +148,14 @@ function estadoCurso(notaFinal, periodoConGuion) {
             ? { texto: 'Pendiente', clase: 'badge-pendiente' }
             : { texto: 'Sin datos', clase: 'badge-critico' };
     }
+
+    // Ciclo ya cerrado: la respuesta es definitiva, no hay "en riesgo"
+    // ni "crítico" — o pasó o no pasó.
+    if (!periodoEstaAbierto(periodoConGuion)) {
+        return notaFinal >= UMBRAL_APROBACION
+            ? { texto: 'Aprobado', clase: 'badge-aprobado' }
+            : { texto: 'Desaprobado', clase: 'badge-critico' };
+    }
     if (notaFinal >= UMBRAL_APROBACION) return { texto: 'Aprobado', clase: 'badge-aprobado' };
     if (notaFinal >= 7) return { texto: 'En riesgo', clase: 'badge-riesgo' };
     return { texto: 'Crítico', clase: 'badge-critico' };
@@ -197,6 +205,8 @@ function renderizarCursos() {
     const banner = document.getElementById('bannerRiesgo');
     if (enRiesgo.length) {
         banner.classList.add('visible');
+        document.querySelector('.banner-riesgo__titulo').textContent =
+            periodoEstaAbierto(periodoActivo) ? '⚠ Cursos en riesgo' : '❌ Cursos desaprobados';
         document.getElementById('bannerRiesgoLista').innerHTML =
             enRiesgo.map((t) => `<p class="banner-riesgo__item">${t}</p>`).join('');
     } else {
