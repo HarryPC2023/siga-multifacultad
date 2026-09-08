@@ -179,6 +179,17 @@ def _guardar_debug_shot(job_id, page):
         logger.exception("No se pudo guardar la captura de diagnóstico para el job %s", job_id)
 
 
+def extraer_n_intralu(texto):
+    """Captura el 'N' real que usa Intralú en sus propias fórmulas, tal
+    cual aparece en el texto de la evaluación (ej. 'PRACTICA 5 (N5)' ->
+    'N5'). No se reconstruye a partir del número de práctica: si algún
+    curso mezcla Labs y Prácticas en la misma numeración de N, contar
+    solo prácticas daría un N equivocado. EP/EF/ES no llevan (Nx) — esas
+    ya son variables propias en la fórmula, se manejan aparte."""
+    m = re.search(r"\(N(\d+)\)", texto.upper())
+    return f"N{m.group(1)}" if m else None
+
+
 def simplificar_etiqueta(texto):
     """Normaliza el nombre de una evaluación de Intralú a la MISMA
     clave exacta (mayúsculas/minúsculas incluidas) que usan los
@@ -443,6 +454,7 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
                                             evaluaciones.append(
                                                 {
                                                     "etiqueta": simplificar_etiqueta(nom_e),
+                                                    "n_intralu": extraer_n_intralu(nom_e),
                                                     "nota": val_n,
                                                 }
                                             )

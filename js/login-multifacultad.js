@@ -492,10 +492,12 @@ async function guardarNotasPeriodo(userId, periodoNormalizado, cursos) {
     const filas = cursos.map((c) => ({
         user_id: userId,
         codigo_curso: c.codigo,
+        nombre_curso: c.nombre || null,
+        creditos: Number.isInteger(c.creditos) ? c.creditos : null,
         periodo: periodoNormalizado,
         seccion: c.seccion || null,
         componentes: (c.evaluaciones || []).reduce((acc, ev) => {
-            if (ev.etiqueta) acc[ev.etiqueta] = ev.nota;
+            if (ev.etiqueta) acc[ev.etiqueta] = { nota: ev.nota, n: ev.n_intralu || null };
             return acc;
         }, {}),
         fuente: 'intralu',
