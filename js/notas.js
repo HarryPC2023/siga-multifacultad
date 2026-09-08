@@ -6,7 +6,7 @@
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 
-const UMBRAL_APROBACION = 10.5;
+const UMBRAL_APROBACION = 10;
 
 let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, nombre_curso, creditos, componentes, seccion}, ... ] }
 let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas_raw, formula_final_raw}
