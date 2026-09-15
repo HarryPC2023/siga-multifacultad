@@ -20,13 +20,16 @@ let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, seccion, nombre_curs
 let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas, formula_nota_final, creditos}
 let periodoActivo = null;
 let valoresSimulados = {};  // clave `${codigo_curso}|${seccion}` -> { N1: 14, EP: 12, ... } (solo del periodo activo)
+let usuarioActual = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     const sesion = await obtenerSesion();
     if (!sesion) { window.location.href = 'index.html'; return; }
+    usuarioActual = sesion.user;
 
-    await cargarDatos(sesion.user.id);
+    await cargarDatos(usuarioActual.id);
     inicializarSelectorPeriodo();
+    inicializarModalEliminarPeriodo();
 
     const periodos = Object.keys(notasPorPeriodo).sort().reverse();
     if (!periodos.length) {
@@ -42,6 +45,7 @@ async function cargarDatos(userId) {
         .select('codigo_curso, seccion, periodo, nombre_curso, promedio_practicas, promedio_final, nota_asistencia, evaluaciones')
         .eq('user_id', userId);
 
+    notasPorPeriodo = {};
     (notas || []).forEach((fila) => {
         const etiqueta = periodoConGuion(fila.periodo);
         if (!notasPorPeriodo[etiqueta]) notasPorPeriodo[etiqueta] = [];
@@ -83,6 +87,67 @@ function seleccionarPeriodo(periodo) {
     document.getElementById('selectorPeriodoTexto').textContent = periodo;
     document.getElementById('selectorPeriodoValor').value = periodo;
     renderizarCursos();
+}
+
+/* ============================================================
+   ELIMINAR EL PERIODO ACTIVO
+   Borra solo lo de notas_curso para este alumno + este periodo.
+   formulas_curso NO se toca — es compartida con otros alumnos que
+   cursaron el mismo curso/sección, no le pertenece a este alumno.
+   ============================================================ */
+function inicializarModalEliminarPeriodo() {
+    document.getElementById('btnEliminarPeriodo').addEventListener('click', abrirModalEliminarPeriodo);
+    document.getElementById('btnCancelarEliminarPeriodo').addEventListener('click', cerrarModalEliminarPeriodo);
+    document.getElementById('btnConfirmarEliminarPeriodo').addEventListener('click', confirmarEliminarPeriodo);
+}
+
+function abrirModalEliminarPeriodo() {
+    if (!periodoActivo) return;
+    document.getElementById('modalEliminarPeriodoTexto').textContent =
+        `Se eliminará por completo el periodo ${periodoActivo}, con todos sus cursos y notas. No se puede deshacer.`;
+    document.getElementById('modalEliminarPeriodo').classList.add('visible');
+}
+
+function cerrarModalEliminarPeriodo() {
+    document.getElementById('modalEliminarPeriodo').classList.remove('visible');
+}
+
+async function confirmarEliminarPeriodo() {
+    cerrarModalEliminarPeriodo();
+    if (!periodoActivo || !usuarioActual) return;
+
+    const periodoEliminado = periodoActivo;
+    const periodoNormalizado = periodoEliminado.replace('-', '');
+
+    const { error } = await supabase
+        .from('notas_curso')
+        .delete()
+        .eq('user_id', usuarioActual.id)
+        .eq('periodo', periodoNormalizado);
+
+    if (error) {
+        document.getElementById('modalEliminarPeriodoTexto').textContent =
+            'No se pudo eliminar el periodo. Intenta de nuevo.';
+        console.error('Error eliminando periodo:', error);
+        return;
+    }
+
+    delete notasPorPeriodo[periodoEliminado];
+    delete formulasPorCurso[periodoEliminado]; // no aplica (clave distinta), no-op seguro
+
+    inicializarSelectorPeriodo();
+    const periodosRestantes = Object.keys(notasPorPeriodo).sort().reverse();
+
+    if (periodosRestantes.length) {
+        seleccionarPeriodo(periodosRestantes[0]);
+    } else {
+        periodoActivo = null;
+        document.getElementById('listaCursos').innerHTML = '';
+        document.getElementById('promedioPonderado').textContent = '--';
+        document.getElementById('bannerRiesgo').classList.remove('visible');
+        document.getElementById('selectorPeriodoTexto').textContent = 'Elige un periodo';
+        document.getElementById('estadoVacio').style.display = 'block';
+    }
 }
 
 function claveSimulacion(curso) {

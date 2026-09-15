@@ -49,8 +49,31 @@
             font-weight: 600;
         }
 
-        #selectorPeriodoTrigger {
+        .fila-selector-periodo {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             margin-bottom: 16px;
+        }
+
+        .fila-selector-periodo .campo-select-custom {
+            flex: 1;
+            position: relative;
+        }
+
+        .btn-eliminar-periodo {
+            flex-shrink: 0;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, 0.15);
+            background: #fff;
+            font-size: 14px;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .btn-eliminar-periodo:hover {
+            background: #FBE1E1;
         }
 
         .card-promedio {
@@ -263,6 +286,92 @@
             color: var(--ink-soft);
             font-size: 14px;
         }
+
+        /* ============================================================
+           MODAL DE CONFIRMACIÓN — mismo patrón visual que producción
+           (icono + título + mensaje + 2 botones), con los tokens de
+           color del sandbox en vez de las variables viejas de SIGA.
+           ============================================================ */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 300;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.visible {
+            display: flex;
+        }
+
+        .modal-caja {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 340px;
+            width: 100%;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+            text-align: center;
+        }
+
+        .modal-icono {
+            font-size: 2.5rem;
+            margin-bottom: 12px;
+        }
+
+        .modal-titulo {
+            font-family: var(--font-heading);
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--brand-morado);
+            margin: 0 0 8px;
+        }
+
+        .modal-mensaje {
+            font-family: var(--font-body);
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+            line-height: 1.5;
+            margin: 0 0 24px;
+        }
+
+        .modal-botones {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .modal-btn {
+            font-family: var(--font-body);
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            flex: 1;
+        }
+
+        .modal-btn-cancelar {
+            background: #F3F4F6;
+            color: var(--ink-soft);
+        }
+
+        .modal-btn-cancelar:hover {
+            background: #E5E7EB;
+        }
+
+        .modal-btn-confirmar {
+            background: #B4232A;
+            color: #fff;
+        }
+
+        .modal-btn-confirmar:hover {
+            background: #9C1E23;
+        }
     </style>
 </head>
 
@@ -273,12 +382,19 @@
             <a class="encabezado-notas__volver" href="login.html">← Sincronizar otro periodo</a>
         </div>
 
-        <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger" aria-haspopup="listbox"
-            aria-expanded="false">
-            <span id="selectorPeriodoTexto">Elige un periodo</span>
-        </button>
-        <ul class="select-custom-lista" id="selectorPeriodoLista" role="listbox" hidden></ul>
-        <input type="hidden" id="selectorPeriodoValor">
+        <div class="fila-selector-periodo">
+            <div class="campo-select-custom">
+                <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger" aria-haspopup="listbox"
+                    aria-expanded="false">
+                    <span id="selectorPeriodoTexto">Elige un periodo</span>
+                    <span class="select-custom-chevron" aria-hidden="true">▾</span>
+                </button>
+                <ul class="select-custom-lista" id="selectorPeriodoLista" role="listbox" hidden></ul>
+                <input type="hidden" id="selectorPeriodoValor">
+            </div>
+            <button type="button" class="btn-eliminar-periodo" id="btnEliminarPeriodo"
+                aria-label="Eliminar este periodo">🗑️</button>
+        </div>
 
         <div class="card-promedio">
             <span class="card-promedio__etiqueta">PROMEDIO PONDERADO</span>
@@ -292,6 +408,24 @@
 
         <div id="listaCursos"></div>
         <div class="estado-vacio" id="estadoVacio" style="display:none;">Aún no sincronizas ningún curso.</div>
+    </div>
+
+    <!-- Modal: eliminar el periodo actualmente seleccionado (todas sus
+         notas en notas_curso para este alumno; formulas_curso NO se toca,
+         es compartida con otros alumnos del mismo curso). -->
+    <div id="modalEliminarPeriodo" class="modal-overlay">
+        <div class="modal-caja">
+            <div class="modal-icono">🗑️</div>
+            <h2 class="modal-titulo">¿Eliminar este periodo?</h2>
+            <p class="modal-mensaje" id="modalEliminarPeriodoTexto">Se eliminará por completo este periodo, con
+                todos sus cursos y notas. No se puede deshacer.</p>
+            <div class="modal-botones">
+                <button type="button" class="modal-btn modal-btn-cancelar"
+                    id="btnCancelarEliminarPeriodo">Cancelar</button>
+                <button type="button" class="modal-btn modal-btn-confirmar" id="btnConfirmarEliminarPeriodo">Sí,
+                    eliminar</button>
+            </div>
+        </div>
     </div>
 
     <script src="js/selector-personalizado.js"></script>
