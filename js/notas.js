@@ -1,15 +1,23 @@
-// js/notas.js — Visor de notas del sandbox multifacultad. Solo lectura de
-// lo sincronizado + simulación en pantalla (editar campos no reescribe
-// Supabase, es únicamente para calcular "qué necesito sacar"). Usa el
-// motor de fórmulas genérico (formula-engine.js) sobre la fórmula cruda
-// que trae cada curso desde INTRALU — sin ningún catálogo por curso.
+// js/notas.js — Visor de notas del sandbox multifacultad. Lee directo de
+// notas_curso (por alumno, evaluaciones crudas en jsonb) y formulas_curso
+// (compartida por curso/sección/periodo, incluye créditos). Las evaluaciones
+// crudas se traducen a variables de fórmula (N1, EP, EF...) al vuelo con
+// formula-mapper.js — nunca se guarda un catálogo por curso.
+//
+// Editar los campos en pantalla es solo simulación (no reescribe Supabase):
+// sirve para calcular "qué necesito sacar". Mientras no se edita nada, la
+// Nota Final que se muestra es la oficial de INTRALU (promedio_final,
+// guardada tal cual la trae la sync) — en cuanto el alumno toca un campo,
+// se pasa a mostrar el cálculo en vivo con el motor de fórmulas, porque ya
+// deja de tener sentido mostrar la oficial sobre una hipótesis.
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
+import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 
 const UMBRAL_APROBACION = 10;
 
-let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, nombre_curso, creditos, componentes, seccion}, ... ] }
-let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas_raw, formula_final_raw}
+let notasPorPeriodo = {};   // { "2023-2": [ {codigo_curso, seccion, nombre_curso, promedio_practicas, promedio_final, nota_asistencia, evaluaciones}, ... ] }
+let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> {formula_practicas, formula_nota_final, creditos}
 let periodoActivo = null;
 let valoresSimulados = {};  // clave `${codigo_curso}|${seccion}` -> { N1: 14, EP: 12, ... } (solo del periodo activo)
 
@@ -30,8 +38,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function cargarDatos(userId) {
     const { data: notas } = await supabase
-        .from('notas_periodo')
-        .select('codigo_curso, nombre_curso, creditos, periodo, seccion, componentes')
+        .from('notas_curso')
+        .select('codigo_curso, seccion, periodo, nombre_curso, promedio_practicas, promedio_final, nota_asistencia, evaluaciones')
         .eq('user_id', userId);
 
     (notas || []).forEach((fila) => {
@@ -43,8 +51,8 @@ async function cargarDatos(userId) {
     const periodosNormalizados = [...new Set((notas || []).map((f) => f.periodo))];
     if (periodosNormalizados.length) {
         const { data: formulas } = await supabase
-            .from('formulas_curso_cache')
-            .select('codigo_curso, seccion, periodo, formula_practicas_raw, formula_final_raw')
+            .from('formulas_curso')
+            .select('codigo_curso, seccion, periodo, formula_practicas, formula_nota_final, creditos')
             .in('periodo', periodosNormalizados);
 
         (formulas || []).forEach((f) => {
@@ -86,17 +94,19 @@ function formulaDeCurso(curso) {
     return formulasPorCurso[`${curso.codigo_curso}|${curso.seccion || ''}|${periodoNormalizado}`] || null;
 }
 
+function haySimulacionActiva(curso) {
+    const simulado = valoresSimulados[claveSimulacion(curso)];
+    return !!simulado && Object.keys(simulado).length > 0;
+}
+
 /* Arma { N1: 14, N2: 12, EP: 10, EF: null, ... } para un curso, tomando
-   primero lo simulado en pantalla y si no, lo sincronizado de Intralú. */
+   primero lo simulado en pantalla y si no, lo sincronizado de Intralú
+   (traducido desde las evaluaciones crudas por formula-mapper.js). */
 function valoresActualesDeCurso(curso) {
     const clave = claveSimulacion(curso);
     const simulado = valoresSimulados[clave] || {};
-    const valores = {};
-    Object.entries(curso.componentes || {}).forEach(([etiqueta, info]) => {
-        const llave = info.n || etiqueta; // N1/N2... si existe; si no (EP/EF/ES), la etiqueta misma
-        valores[llave] = etiqueta in simulado ? simulado[etiqueta] : info.nota;
-    });
-    return valores;
+    const base = construirValoresFormula(curso.evaluaciones);
+    return { ...base, ...simulado };
 }
 
 function calcularCurso(curso) {
@@ -106,19 +116,27 @@ function calcularCurso(curso) {
 
     let pp = null;
     try {
-        pp = formula.formula_practicas_raw ? evaluarFormula(formula.formula_practicas_raw, valores) : null;
+        pp = formula.formula_practicas ? evaluarFormula(formula.formula_practicas, valores) : null;
     } catch { pp = null; }
 
     let notaFinal = null;
     try {
-        if (formula.formula_final_raw) {
+        if (formula.formula_nota_final) {
             const conSustituto = aplicarSustitutorio({ ...valores, PP: pp });
-            const notaFinalCruda = evaluarFormula(formula.formula_final_raw, conSustituto);
+            const notaFinalCruda = evaluarFormula(formula.formula_nota_final, conSustituto);
             notaFinal = truncarNota(notaFinalCruda);
         }
     } catch { notaFinal = null; }
 
     return { pp, notaFinal, formula, valores };
+}
+
+/* La Nota Final que se muestra: mientras no hay simulación, la oficial de
+   INTRALU (promedio_final, tal cual la trajo la sync); en cuanto el alumno
+   edita algo, pasa a ser el cálculo en vivo con el motor de fórmulas. */
+function notaFinalMostrada(curso, notaFinalCalculada) {
+    if (haySimulacionActiva(curso)) return notaFinalCalculada;
+    return curso.promedio_final ?? notaFinalCalculada;
 }
 
 /* Un periodo pasado NUNCA debería quedar con notas a medias — si eso
@@ -170,11 +188,14 @@ function renderizarCursos() {
     const enRiesgo = [];
 
     cursos.forEach((curso, idx) => {
-        const { pp, notaFinal } = calcularCurso(curso);
+        const { notaFinal: notaFinalCalculada } = calcularCurso(curso);
+        const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
         const estado = estadoCurso(notaFinal, periodoActivo);
-        if (notaFinal !== null && curso.creditos) {
-            sumaPonderada += notaFinal * curso.creditos;
-            sumaCreditos += curso.creditos;
+        const creditos = formulaDeCurso(curso)?.creditos ?? null;
+
+        if (notaFinal !== null && creditos) {
+            sumaPonderada += notaFinal * creditos;
+            sumaCreditos += creditos;
         }
         if (notaFinal !== null && (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico')) {
             enRiesgo.push(`${curso.nombre_curso || curso.codigo_curso} — ${notaFinal}`);
@@ -186,7 +207,7 @@ function renderizarCursos() {
             <div class="curso-card__cabecera" data-toggle="${idx}">
                 <div>
                     <p class="curso-card__nombre">${curso.nombre_curso || curso.codigo_curso}<span class="badge ${estado.clase}">${estado.texto}</span></p>
-                    <p class="curso-card__meta">${curso.codigo_curso}${curso.creditos ? ` · ${curso.creditos} cr` : ''}</p>
+                    <p class="curso-card__meta">${curso.codigo_curso}${creditos ? ` · ${creditos} cr` : ''}</p>
                 </div>
                 <div class="curso-card__promedio">
                     <p class="curso-card__promedio-etiqueta">Nota Final</p>
@@ -225,23 +246,72 @@ function toggleCurso(idx, curso) {
     }
 }
 
+/* Clasifica una evaluación NO examen (es_examen === false) por lo que dice
+   su descripción real de INTRALU — no por camnot, que solo numera para la
+   fórmula y no distingue tipo. PENDIENTE DE VERIFICAR con un curso real
+   que tenga labs o monografía (ver nota en formula-mapper.js). */
+function claseEvaluacion(descripcion) {
+    const d = (descripcion || '').toUpperCase();
+    if (d.includes('LABORATORIO') || d.includes(' LAB')) return 'LAB';
+    if (d.includes('MONOGRAF')) return 'MONOGRAFIA';
+    return 'PC';
+}
+
+/* Etiqueta visible para una evaluación NO examen: PC1/PC2 para prácticas
+   calificadas, LAB1/LAB2 para laboratorios (así las conocen los alumnos),
+   y la descripción tal cual de INTRALU para monografías (sin renombrar). */
+function etiquetaNoExamen(ev) {
+    const clase = claseEvaluacion(ev.descripcion);
+    if (clase === 'MONOGRAFIA') return (ev.descripcion || 'Monografía').trim();
+    if (clase === 'LAB') return `LAB${ev.camnot ?? ''}`;
+    return `PC${ev.camnot ?? ''}`;
+}
+
+const ETIQUETA_EXAMEN = { EP: 'Examen Parcial', EF: 'Examen Final', ES: 'Sustitutorio' };
+const ORDEN_EXAMEN = { EP: 1, EF: 2, ES: 3 };
+
+/* Traduce el arreglo crudo de evaluaciones a filas listas para pintar:
+   { variable, label, nota }, en el mismo orden en que INTRALU las muestra
+   (prácticas/labs por camnot, luego EP, EF, ES). Evaluaciones que
+   formula-mapper.js no sabe clasificar (examen de tipo no reconocido) se
+   omiten — no se inventa una variable para ellas. */
+function componentesVisibles(evaluaciones) {
+    const filas = [];
+    for (const ev of evaluaciones || []) {
+        if (!ev.es_examen) {
+            if (ev.camnot === null || ev.camnot === undefined) continue;
+            filas.push({ variable: `N${ev.camnot}`, label: etiquetaNoExamen(ev), nota: notaComoNumero(ev.nota), camnot: ev.camnot });
+        } else {
+            const variable = clasificarExamen(ev.descripcion);
+            if (!variable) continue;
+            filas.push({ variable, label: ETIQUETA_EXAMEN[variable] || variable, nota: notaComoNumero(ev.nota), camnot: null });
+        }
+    }
+    filas.sort((a, b) => {
+        const oa = ORDEN_EXAMEN[a.variable] ?? 0, ob = ORDEN_EXAMEN[b.variable] ?? 0;
+        if (oa !== ob) return oa - ob;
+        return (a.camnot ?? 0) - (b.camnot ?? 0);
+    });
+    return filas;
+}
+
 function armarCuerpoCurso(cuerpo, curso, idx) {
-    const componentes = Object.entries(curso.componentes || {});
+    const filas = componentesVisibles(curso.evaluaciones);
 
     const grid = document.createElement('div');
     grid.className = 'grid-componentes';
-    componentes.forEach(([etiqueta, info]) => {
+    filas.forEach((fila) => {
         const campo = document.createElement('div');
         campo.className = 'componente';
         campo.innerHTML = `
-            <label>${etiqueta}</label>
-            <input type="number" step="0.1" min="0" max="20" value="${info.nota ?? ''}" placeholder="--">
+            <label>${fila.label}</label>
+            <input type="number" step="0.1" min="0" max="20" value="${fila.nota ?? ''}" placeholder="--">
         `;
         campo.querySelector('input').addEventListener('input', (e) => {
             const clave = claveSimulacion(curso);
             if (!valoresSimulados[clave]) valoresSimulados[clave] = {};
             const v = e.target.value === '' ? null : parseFloat(e.target.value);
-            valoresSimulados[clave][etiqueta] = v;
+            valoresSimulados[clave][fila.variable] = v;
             actualizarCuerpoCurso(cuerpo, curso, idx);
         });
         grid.appendChild(campo);
@@ -252,6 +322,10 @@ function armarCuerpoCurso(cuerpo, curso, idx) {
     promPC.className = 'prom-pc';
     cuerpo.appendChild(promPC);
 
+    const formulaVisible = document.createElement('p');
+    formulaVisible.className = 'formula-visible';
+    cuerpo.appendChild(formulaVisible);
+
     const cajaNecesito = document.createElement('div');
     cajaNecesito.className = 'caja-necesito';
     cuerpo.appendChild(cajaNecesito);
@@ -260,10 +334,15 @@ function armarCuerpoCurso(cuerpo, curso, idx) {
 }
 
 function actualizarCuerpoCurso(cuerpo, curso, idx) {
-    const { pp, notaFinal, formula, valores } = calcularCurso(curso);
+    const { pp, notaFinal: notaFinalCalculada, formula, valores } = calcularCurso(curso);
+    const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
 
     cuerpo.querySelector('.prom-pc').innerHTML = pp !== null
         ? `Prom. PC: <strong>${pp.toFixed(2)}</strong>`
+        : '';
+
+    cuerpo.querySelector('.formula-visible').textContent = formula
+        ? `Fórmula: ${formula.formula_nota_final || '—'}${formula.formula_practicas ? ` (PP: ${formula.formula_practicas})` : ''}`
         : '';
 
     // Actualiza también la cabecera de la card sin re-renderizar toda la lista
@@ -277,7 +356,7 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
     }
 
     const caja = cuerpo.querySelector('.caja-necesito');
-    if (!formula || !formula.formula_final_raw) {
+    if (!formula || !formula.formula_nota_final) {
         caja.innerHTML = periodoEstaAbierto(periodoActivo)
             ? `<p class="aviso-sin-formula">INTRALU todavía no publica la fórmula de este curso. En cuanto la publique y vuelvas a sincronizar, aparece acá el cálculo de "qué nota necesito".</p>`
             : `<p class="aviso-sin-formula">Este periodo ya cerró pero no se guardó la fórmula de este curso. Vuelve a sincronizar este periodo — si sigue igual, avísale a Harry.</p>`;
@@ -287,15 +366,15 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
     // La incógnita es el primer campo EF/ES que esté vacío en la simulación actual.
     const incognita = ['EF', 'ES'].find((k) => k in valores && (valores[k] === null || valores[k] === undefined));
     if (!incognita) {
-        caja.innerHTML = notaFinal !== null
-            ? `<p class="caja-necesito__titulo">🎯 Con estos valores</p>Nota Final: <span class="caja-necesito__valor">${notaFinal}</span>`
+        caja.innerHTML = notaFinalCalculada !== null
+            ? `<p class="caja-necesito__titulo">🎯 Con estos valores</p>Nota Final: <span class="caja-necesito__valor">${notaFinalCalculada}</span>`
             : '';
         return;
     }
 
     const resultado = calcularNotaMinimaNecesaria({
-        formulaPP: formula.formula_practicas_raw,
-        formulaFinal: formula.formula_final_raw,
+        formulaPP: formula.formula_practicas,
+        formulaFinal: formula.formula_nota_final,
         valoresBase: valores,
         variableIncognita: incognita,
         umbral: UMBRAL_APROBACION,

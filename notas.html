@@ -214,12 +214,23 @@
         .prom-pc {
             font-size: 12px;
             color: var(--ink-soft);
-            margin-bottom: 12px;
+            margin-bottom: 6px;
         }
 
         .prom-pc strong {
             font-family: 'JetBrains Mono', monospace;
             color: var(--ink);
+        }
+
+        .formula-visible {
+            font-size: 11px;
+            color: var(--ink-soft);
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0, 0, 0, 0.035);
+            border-radius: 8px;
+            padding: 6px 10px;
+            margin: 0 0 12px;
+            word-break: break-word;
         }
 
         .caja-necesito {
@@ -262,8 +273,8 @@
             <a class="encabezado-notas__volver" href="login.html">← Sincronizar otro periodo</a>
         </div>
 
-        <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger"
-            aria-haspopup="listbox" aria-expanded="false">
+        <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger" aria-haspopup="listbox"
+            aria-expanded="false">
             <span id="selectorPeriodoTexto">Elige un periodo</span>
         </button>
         <ul class="select-custom-lista" id="selectorPeriodoLista" role="listbox" hidden></ul>
