@@ -317,6 +317,7 @@ async function guardarResultadoSync(userId, resultado) {
         periodo: resultado.periodo,
         formula_practicas: c.formula_practicas,
         formula_nota_final: c.formula_nota_final,
+        creditos: c.creditos,
     }));
     const { error: errorFormulas } = await supabase
         .from('formulas_curso')
