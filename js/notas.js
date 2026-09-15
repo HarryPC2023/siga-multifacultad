@@ -119,16 +119,16 @@ async function confirmarEliminarPeriodo() {
     const periodoEliminado = periodoActivo;
     const periodoNormalizado = periodoEliminado.replace('-', '');
 
-    const { error } = await supabase
+    const { error, count } = await supabase
         .from('notas_curso')
-        .delete()
+        .delete({ count: 'exact' })
         .eq('user_id', usuarioActual.id)
         .eq('periodo', periodoNormalizado);
 
-    if (error) {
+    if (error || !count) {
         document.getElementById('modalEliminarPeriodoTexto').textContent =
             'No se pudo eliminar el periodo. Intenta de nuevo.';
-        console.error('Error eliminando periodo:', error);
+        console.error('Error eliminando periodo (o 0 filas borradas — revisa las políticas RLS):', error);
         return;
     }
 
