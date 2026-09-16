@@ -79,6 +79,26 @@ class LoginPorCookieRequest(BaseModel):
     )
 
 
+class LoginIntraluRequest(BaseModel):
+    """Login NUEVO de INTRALU: código+contraseña con automatización
+    sigilosa (stealth) que sí logra pasar el reCAPTCHA — confirmado 20/20
+    en pruebas. Reemplaza a LoginPorCookieRequest para /api/sync-intralu;
+    LoginPorCookieRequest se mantiene solo por ahora para
+    /api/avance-curricular, que aún no se ha migrado."""
+    codigo: str = Field(..., examples=["20231059E"], description="Tu código de estudiante UNI (el mismo de INTRALU).")
+    password: str = Field(..., examples=["tu_contraseña_de_intralu"], description="Tu contraseña de INTRALU. Nunca se guarda.")
+    periodo: str = Field(
+        ...,
+        examples=["20262"],
+        description=(
+            "Periodo específico a sincronizar, formato crudo AÑO+TIPO "
+            "('20262' = 2026-2) — también acepta el formato con guion "
+            "('2026-2'). El sandbox multifacultad siempre pide UN periodo, "
+            "nunca 'todos' (a diferencia de producción)."
+        ),
+    )
+
+
 class LoginRequest(BaseModel):
     """Sigue usándose SOLO para /api/sync-horarios (Matrícula UNI), que es
     un sistema de login totalmente distinto a INTRALU y que, por ahora, no
@@ -255,6 +275,36 @@ def _extraer_formulas_curso(page):
 DOMINIO_INTRALU = "alumnos.uni.edu.pe"
 
 
+def _login_intralu_page(context, codigo, password):
+    """Login NUEVO (código+contraseña, con tecleo de pausas humanas —
+    el 'stealth' real ya lo aplica Stealth().use_sync() al envolver
+    sync_playwright() en _ejecutar_sync, no aquí). Mismo patrón que
+    _login_por_cookie: recibe un `context` ya abierto por quien llama y
+    devuelve una `page` autenticada, sin cerrar el browser — así el resto
+    de _ejecutar_sync (que navega curso por curso con esa misma page) no
+    necesita cambiar nada más."""
+    page = context.new_page()
+    page.goto(f"https://{DOMINIO_INTRALU}/login", wait_until="domcontentloaded")
+    page.wait_for_timeout(random.randint(600, 1400))
+
+    page.click("#txt-codigo")
+    page.type("#txt-codigo", codigo, delay=random.randint(90, 190))
+    page.wait_for_timeout(random.randint(300, 800))
+
+    page.click("#txt-password")
+    page.type("#txt-password", password, delay=random.randint(90, 190))
+    page.wait_for_timeout(random.randint(400, 900))
+
+    page.click("#btn-login")
+
+    try:
+        page.wait_for_url("**/home**", timeout=20000)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Código o contraseña incorrectos en Intralú.")
+
+    return page
+
+
 def _login_por_cookie(context, session_cookie, xsrf_token):
     """Inyecta en el contexto de Playwright la sesión que el alumno ya abrió
     manualmente en INTRALU (resolviendo el reCAPTCHA él mismo) — el 'SIGA
@@ -303,7 +353,7 @@ class _SyncCancelada(Exception):
     pass
 
 
-def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
+def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
     """Corre en un hilo aparte (no bloquea ningún request HTTP). Guarda
     el progreso y el resultado final en _jobs[job_id] para que el
     frontend los recoja haciendo polling contra GET /api/sync-intralu/{job_id}."""
@@ -323,19 +373,27 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
     browser = None
 
     try:
-        with sync_playwright() as p:
+        with Stealth().use_sync(sync_playwright()) as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                ),
+                viewport={"width": 1366, "height": 768},
+                locale="es-PE",
+            )
 
-            # 1. Sesión prestada por el conector (sin tocar login/reCAPTCHA)
+            # 1. Login nuevo (código+contraseña, stealth) — reemplaza al
+            # login por cookie de la extensión.
             try:
-                page = _login_por_cookie(context, session_cookie, xsrf_token)
-            except SesionIntraluExpirada:
+                page = _login_intralu_page(context, codigo, password)
+            except HTTPException as e:
                 with _jobs_lock:
                     _jobs[job_id]["status"] = "error"
-                    _jobs[job_id]["status_code"] = 401
-                    _jobs[job_id]["detail"] = "Tu sesión de INTRALU expiró o cerraste sesión. Vuelve a iniciar sesión en INTRALU e intenta de nuevo."
-                logger.info("Job %s: ❌ COOKIE INVÁLIDA/VENCIDA tras %.1fs", job_id, time.time() - inicio)
+                    _jobs[job_id]["status_code"] = e.status_code
+                    _jobs[job_id]["detail"] = e.detail
+                logger.info("Job %s: ❌ LOGIN FALLIDO tras %.1fs", job_id, time.time() - inicio)
                 return
 
             # 2. El sandbox multifacultad siempre sincroniza un periodo
@@ -552,7 +610,7 @@ def _ejecutar_sync(job_id, session_cookie, xsrf_token, periodo_especifico):
 
 
 @app.post("/api/sync-intralu")
-def iniciar_sync(credentials: LoginPorCookieRequest):
+def iniciar_sync(credentials: LoginIntraluRequest):
     """Responde AL INSTANTE con un job_id — no espera a que termine el
     scraping. La sincronización real corre en un hilo aparte."""
     _limpiar_jobs_viejos()
@@ -568,7 +626,7 @@ def iniciar_sync(credentials: LoginPorCookieRequest):
 
     hilo = threading.Thread(
         target=_ejecutar_sync,
-        args=(job_id, credentials.session_cookie, credentials.xsrf_token, credentials.periodo),
+        args=(job_id, credentials.codigo, credentials.password, credentials.periodo),
         daemon=True,
     )
     hilo.start()
