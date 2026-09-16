@@ -14,12 +14,26 @@ function limpiarTexto(textoCrudo) {
 function extraerEncabezado(textoCrudo) {
     const primerBloque = textoCrudo.split(/=====\s*PÁGINA\s*2\s*=====/)[0] || textoCrudo;
     const facultad = primerBloque.match(/FACULTAD\s*:\s*(.+?)\s{2,}ALUMNO/)?.[1]?.trim() || null;
-    const alumno = primerBloque.match(/ALUMNO\s*:\s*(.+?)\s{2,}ESPECIALIDAD/)?.[1]?.trim() || null;
     const especialidad = primerBloque.match(/ESPECIALIDAD\s*:\s*(.+?)\s{2,}C[OÓ]DIGO/)?.[1]?.trim() || null;
     const codigo = primerBloque.match(/C[OÓ]DIGO\s*:\s*(\S+)/)?.[1] || null;
     const cicloRelativo = primerBloque.match(/CICLO RELATIVO\s*:\s*(\d+)/)?.[1] || null;
     const planEstudio = primerBloque.match(/PLAN DE ESTUDIO\s*:\s*(\S+)/)?.[1] || null;
-    return { facultad, alumno, especialidad, codigo, cicloRelativo, planEstudio };
+    return { facultad, especialidad, codigo, cicloRelativo, planEstudio };
+}
+
+/* El código de estudiante de la UNI codifica el año de ingreso en los
+   primeros 4 dígitos (ej. "20231059E" -> ingresó en 2023). Sirve para
+   derivar/confirmar el periodo de ingreso sin depender de que el alumno
+   lo recuerde marcar bien a mano en el selector.
+   SUPUESTO SIN VERIFICAR: se asume que el ingreso siempre es en el
+   periodo 1 (marzo-julio) — si hay alumnos que ingresan por traslado o
+   examen de mitad de año (periodo 2), esto quedaría un semestre
+   adelantado. Falta confirmar con un caso real de alguien que haya
+   ingresado así antes de confiar en esto a ciegas. */
+function periodoIngresoDesdeCodigo(codigo) {
+    const anio = parseInt((codigo || '').slice(0, 4), 10);
+    if (Number.isNaN(anio) || anio < 2000 || anio > new Date().getFullYear()) return null;
+    return `${anio}1`;
 }
 
 function parsearFilasDeSegmento(segmento) {
@@ -118,4 +132,4 @@ function parsearAvanceCurricular(textoCrudo) {
     return { ...encabezado, ciclos, electivos, electivosComplementarios };
 }
 
-export { parsearAvanceCurricular };
+export { parsearAvanceCurricular, periodoIngresoDesdeCodigo };
