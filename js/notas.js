@@ -119,16 +119,16 @@ async function confirmarEliminarPeriodo() {
     const periodoEliminado = periodoActivo;
     const periodoNormalizado = periodoEliminado.replace('-', '');
 
-    const { error, count } = await supabase
+    const { error } = await supabase
         .from('notas_curso')
-        .delete({ count: 'exact' })
+        .delete()
         .eq('user_id', usuarioActual.id)
         .eq('periodo', periodoNormalizado);
 
-    if (error || !count) {
+    if (error) {
         document.getElementById('modalEliminarPeriodoTexto').textContent =
             'No se pudo eliminar el periodo. Intenta de nuevo.';
-        console.error('Error eliminando periodo (o 0 filas borradas — revisa las políticas RLS):', error);
+        console.error('Error eliminando periodo:', error);
         return;
     }
 
@@ -343,14 +343,15 @@ const ORDEN_EXAMEN = { EP: 1, EF: 2, ES: 3 };
 function componentesVisibles(evaluaciones) {
     const filas = [];
     for (const ev of evaluaciones || []) {
-        if (!ev.es_examen) {
-            if (ev.camnot === null || ev.camnot === undefined) continue;
-            filas.push({ variable: `N${ev.camnot}`, label: etiquetaNoExamen(ev), nota: notaComoNumero(ev.nota), camnot: ev.camnot });
-        } else {
-            const variable = clasificarExamen(ev.descripcion);
-            if (!variable) continue;
-            filas.push({ variable, label: ETIQUETA_EXAMEN[variable] || variable, nota: notaComoNumero(ev.nota), camnot: null });
+        // OJO: no se usa ev.es_examen — ver la nota en formula-mapper.js.
+        // clasificarExamen(descripcion) es la única fuente confiable.
+        const variableExamen = clasificarExamen(ev.descripcion);
+        if (variableExamen) {
+            filas.push({ variable: variableExamen, label: ETIQUETA_EXAMEN[variableExamen] || variableExamen, nota: notaComoNumero(ev.nota), camnot: null });
+            continue;
         }
+        if (ev.camnot === null || ev.camnot === undefined) continue;
+        filas.push({ variable: `N${ev.camnot}`, label: etiquetaNoExamen(ev), nota: notaComoNumero(ev.nota), camnot: ev.camnot });
     }
     filas.sort((a, b) => {
         const oa = ORDEN_EXAMEN[a.variable] ?? 0, ob = ORDEN_EXAMEN[b.variable] ?? 0;
@@ -387,10 +388,6 @@ function armarCuerpoCurso(cuerpo, curso, idx) {
     promPC.className = 'prom-pc';
     cuerpo.appendChild(promPC);
 
-    const formulaVisible = document.createElement('p');
-    formulaVisible.className = 'formula-visible';
-    cuerpo.appendChild(formulaVisible);
-
     const cajaNecesito = document.createElement('div');
     cajaNecesito.className = 'caja-necesito';
     cuerpo.appendChild(cajaNecesito);
@@ -404,10 +401,6 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
 
     cuerpo.querySelector('.prom-pc').innerHTML = pp !== null
         ? `Prom. PC: <strong>${pp.toFixed(2)}</strong>`
-        : '';
-
-    cuerpo.querySelector('.formula-visible').textContent = formula
-        ? `Fórmula: ${formula.formula_nota_final || '—'}${formula.formula_practicas ? ` (PP: ${formula.formula_practicas})` : ''}`
         : '';
 
     // Actualiza también la cabecera de la card sin re-renderizar toda la lista

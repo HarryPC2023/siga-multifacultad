@@ -35,16 +35,19 @@ function clasificarExamen(descripcion) {
 /* Convierte el arreglo crudo `evaluaciones` (tal como se guarda en
    Supabase) al objeto `valores` que necesita evaluarFormula(). */
 function construirValoresFormula(evaluaciones) {
+    // OJO: no se usa ev.es_examen — INTRALU lo manda mal a veces (ej.
+    // BEG01 trae TODAS las prácticas marcadas como examen; SI501 trae
+    // solo la PC3 así, sin patrón). clasificarExamen(descripcion) es
+    // la única fuente confiable: si el texto no matchea un examen
+    // conocido, es práctica/lab, punto.
     const valores = {};
     for (const ev of evaluaciones || []) {
         const nota = notaComoNumero(ev.nota);
-        if (!ev.es_examen) {
-            if (ev.camnot !== null && ev.camnot !== undefined) {
-                valores[`N${ev.camnot}`] = nota;
-            }
-        } else {
-            const variable = clasificarExamen(ev.descripcion);
-            if (variable) valores[variable] = nota;
+        const variableExamen = clasificarExamen(ev.descripcion);
+        if (variableExamen) {
+            valores[variableExamen] = nota;
+        } else if (ev.camnot !== null && ev.camnot !== undefined) {
+            valores[`N${ev.camnot}`] = nota;
         }
     }
     return valores;
