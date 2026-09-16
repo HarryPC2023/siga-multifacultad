@@ -5,6 +5,8 @@
 
 import * as pdfjsLib from '../vendor-pdfjs/pdf.min.mjs';
 import { parsearAvanceCurricular } from './avance-curricular-parser.js';
+import { guardarAvanceCurricular } from './avance-curricular-guardar.js';
+import { obtenerSesion } from './auth-siga.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
     new URL('../vendor-pdfjs/pdf.worker.min.mjs', import.meta.url).href;
@@ -64,6 +66,15 @@ btnProbar.addEventListener('click', async () => {
     btnProbar.disabled = true;
     btnCopiar.style.display = 'none';
     salida.textContent = '';
+    mostrarEstado('Verificando tu sesión de SIGA...');
+
+    const sesion = await obtenerSesion();
+    if (!sesion) {
+        mostrarEstado('No hay sesión de SIGA activa — inicia sesión primero en login.html (con Google) y vuelve a esta página.', true);
+        btnProbar.disabled = false;
+        return;
+    }
+
     mostrarEstado('Pidiéndole el PDF a la extensión...');
 
     const resultado = await pedirAvanceCurricularExtension();
@@ -83,7 +94,11 @@ btnProbar.addEventListener('click', async () => {
             .map((c) => `Ciclo ${c.numero}: ${c.cursos.length} cursos`)
             .join('\n');
 
+        mostrarEstado('Texto parseado, guardando en avance_curricular...');
+        const resultadoGuardado = await guardarAvanceCurricular(sesion.user.id, estructurado);
+
         salida.textContent =
+            `===== RESULTADO DEL GUARDADO =====\n${JSON.stringify(resultadoGuardado, null, 2)}\n\n` +
             `===== ENCABEZADO =====\n${JSON.stringify({
                 facultad: estructurado.facultad,
                 especialidad: estructurado.especialidad,
@@ -96,7 +111,12 @@ btnProbar.addEventListener('click', async () => {
             `===== JSON COMPLETO =====\n${JSON.stringify(estructurado, null, 2)}\n\n` +
             `===== TEXTO CRUDO (pdf.js) =====\n${texto}`;
 
-        mostrarEstado(`Listo — ${(bytes.length / 1024).toFixed(0)} KB de PDF procesados.`);
+        mostrarEstado(
+            resultadoGuardado.ok
+                ? `Listo — ${resultadoGuardado.cursosGuardados} cursos guardados en avance_curricular (${resultadoGuardado.facultad} / ${resultadoGuardado.carrera}).`
+                : `Se parseó bien, pero el guardado falló: ${resultadoGuardado.detalle || resultadoGuardado.motivo}`,
+            !resultadoGuardado.ok
+        );
         btnCopiar.style.display = 'inline-block';
     } catch (e) {
         mostrarEstado(`Error al procesar el PDF: ${e.message || e}`, true);
