@@ -4,6 +4,7 @@
 // PDF, lo pasa por pdf.js, y muestra el texto crudo en pantalla.
 
 import * as pdfjsLib from '../vendor-pdfjs/pdf.min.mjs';
+import { parsearAvanceCurricular } from './avance-curricular-parser.js';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
     new URL('../vendor-pdfjs/pdf.worker.min.mjs', import.meta.url).href;
@@ -76,7 +77,25 @@ btnProbar.addEventListener('click', async () => {
     try {
         const bytes = base64AArrayBuffer(resultado.base64);
         const texto = await extraerTextoPdf(bytes);
-        salida.textContent = texto;
+        const estructurado = parsearAvanceCurricular(texto);
+
+        const resumenCiclos = estructurado.ciclos
+            .map((c) => `Ciclo ${c.numero}: ${c.cursos.length} cursos`)
+            .join('\n');
+
+        salida.textContent =
+            `===== ENCABEZADO =====\n${JSON.stringify({
+                facultad: estructurado.facultad,
+                especialidad: estructurado.especialidad,
+                planEstudio: estructurado.planEstudio,
+                cicloRelativo: estructurado.cicloRelativo,
+            }, null, 2)}\n\n` +
+            `===== RESUMEN =====\n${resumenCiclos}\n` +
+            `Electivos: ${estructurado.electivos.length}\n` +
+            `Electivos complementarios: ${estructurado.electivosComplementarios.length}\n\n` +
+            `===== JSON COMPLETO =====\n${JSON.stringify(estructurado, null, 2)}\n\n` +
+            `===== TEXTO CRUDO (pdf.js) =====\n${texto}`;
+
         mostrarEstado(`Listo — ${(bytes.length / 1024).toFixed(0)} KB de PDF procesados.`);
         btnCopiar.style.display = 'inline-block';
     } catch (e) {
