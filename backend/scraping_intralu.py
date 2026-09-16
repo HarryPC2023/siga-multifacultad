@@ -245,6 +245,9 @@ def simplificar_etiqueta(texto):
     return None  # no calza con nada conocido -> se descarta (ej. nombres de compañeros de grupo, filas de otra tabla)
 
 
+# NOTA: ya no se llama desde _ejecutar_sync (Etapa B) — las fórmulas
+# ahora llegan directo en la respuesta JSON de /cursos/notas. Se deja
+# la función por si se necesita como referencia o respaldo.
 def _extraer_formulas_curso(page):
     """Lee el texto crudo de las dos fórmulas de evaluación del curso,
     si están presentes en la página (misma página de detalle donde ya
@@ -396,6 +399,16 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                 logger.info("Job %s: ❌ LOGIN FALLIDO tras %.1fs", job_id, time.time() - inicio)
                 return
 
+            # Token CSRF para las peticiones POST directas (cursos/notas):
+            # Laravel exige el valor de la cookie XSRF-TOKEN decodificado
+            # en el header X-XSRF-TOKEN — confirmado en vivo, es el bug
+            # raíz de todo bloqueo CSRF con este endpoint.
+            xsrf_token = None
+            for c in context.cookies():
+                if c["name"] == "XSRF-TOKEN":
+                    xsrf_token = unquote(c["value"])
+                    break
+
             # 2. El sandbox multifacultad siempre sincroniza un periodo
             # específico a la vez (no existe la opción de "todos" acá).
             periodos = [periodo_especifico]
@@ -445,15 +458,11 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                                 }
                             )
 
-                # Ahora sí, visitamos el detalle de cada curso para sacar sus notas.
-                # MAX_INTENTOS_NOTAS = 2: en el plan gratuito de Render (0.1 CPU
-                # compartida) la tabla de notas a veces tarda más en pintar por
-                # JS de lo que cualquier timeout razonable puede cubrir sin volver
-                # lentísima TODA la sync. En vez de subir el timeout al infinito,
-                # si el primer intento no encuentra la tabla, recargamos esa misma
-                # página del curso una vez más antes de rendirnos — en la práctica
-                # un segundo intento casi siempre alcanza a cargar bien.
-                MAX_INTENTOS_NOTAS = 2
+                # Ahora sí, sacamos las notas de cada curso — UNA petición
+                # HTTP directa por curso (el mismo endpoint que usa Intralú
+                # por dentro), en vez de navegar y esperar con reintentos a
+                # que Angular pinte la tabla. Esta sola llamada trae de una:
+                # evaluaciones, fórmulas Y promedios ya calculados por Intralú.
                 cursos_lista = []
                 for c_info in cursos_temp:
                     with _jobs_lock:
@@ -463,101 +472,85 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                     logger.info(
                         "Job %s:   -> %s (%s)", job_id, c_info["cod_curso"], periodo,
                     )
-                    url_det = f"https://alumnos.uni.edu.pe/informacion-academica/cursos/{periodo}/{c_info['cod_curso']}/{c_info['seccion']}"
 
                     evaluaciones = []
-                    for intento in range(1, MAX_INTENTOS_NOTAS + 1):
-                        # networkidle (no domcontentloaded): la tabla de notas de
-                        # esta página en particular parece cargar vía JS después
-                        # del render inicial — con domcontentloaded llegábamos
-                        # antes de que existieran las filas, por eso siempre
-                        # salía vacío. Esperamos a que la red se calme.
-                        try:
-                            page.goto(url_det, wait_until="networkidle", timeout=45000)
-                            # Colchón extra: con la CPU limitada del plan gratuito, a
-                            # veces el JS termina de pintar la tabla un poco después
-                            # de que la red ya se calmó.
-                            page.wait_for_timeout(800)
-                        except Exception:
-                            page.goto(url_det, wait_until="domcontentloaded")
+                    formula_practicas = None
+                    formula_nota_final = None
+                    promedio_practicas = None
+                    promedio_final = None
+                    nota_asistencia = None
+                    datos_curso = None
 
-                        try:
-                            # OJO: "text=/PRACTICA|EXAMEN/i" busca ese texto en TODA
-                            # la página, no solo en la tabla de notas — si esa
-                            # palabra existe en cualquier otro lugar fijo de la
-                            # página (un menú, un enlace), el wait se satisface al
-                            # instante sin haber esperado realmente a que la tabla
-                            # de notas del curso terminara de pintarse por JS. Por
-                            # eso escopeamos el locator a filas de tabla reales
-                            # (table tbody tr) que CONTENGAN ese texto — así solo
-                            # cuenta como "encontrado" cuando está dentro de la
-                            # tabla que de verdad nos importa.
-                            page.locator(
-                                "table tbody tr", has_text=re.compile("PRACTICA|EXAMEN", re.I)
-                            ).first.wait_for(timeout=20000)
-                            for t in page.locator("table").all():
-                                for f in t.locator("tbody tr").all():
-                                    c = f.locator("td").all()
-                                    if len(c) >= 2:
-                                        # text_content() en vez de inner_text(): este
-                                        # último devuelve "" si el elemento está oculto
-                                        # (ej. dentro de una pestaña no activa), que es
-                                        # nuestra sospecha principal de por qué las
-                                        # Prácticas Calificadas no estaban llegando.
-                                        nom_e = (c[0].text_content() or "").strip()
-                                        not_e = (c[1].text_content() or "").strip()
-                                        etiqueta = simplificar_etiqueta(nom_e) if nom_e else None
-                                        if etiqueta and not nom_e.isdigit():
-                                            try:
-                                                val_n = float(not_e)
-                                            except ValueError:
-                                                val_n = None
-                                            evaluaciones.append(
-                                                {
-                                                    "etiqueta": etiqueta,
-                                                    "n_intralu": extraer_n_intralu(nom_e),
-                                                    "nota": val_n,
-                                                }
-                                            )
-                            break  # tabla encontrada, no hace falta reintentar
-                        except Exception:
-                            if intento < MAX_INTENTOS_NOTAS:
-                                logger.info(
-                                    "Job %s: intento %d/%d sin tabla de notas en %s (%s), reintentando...",
-                                    job_id, intento, MAX_INTENTOS_NOTAS, c_info["cod_curso"], periodo,
+                    try:
+                        resp = page.request.post(
+                            "https://alumnos.uni.edu.pe/informacion-academica/cursos/notas",
+                            form={
+                                "codper": periodo,
+                                "codcur": c_info["cod_curso"],
+                                "seccion": c_info["seccion"],
+                            },
+                            headers={
+                                "X-XSRF-TOKEN": xsrf_token or "",
+                                "X-Requested-With": "XMLHttpRequest",
+                            },
+                        )
+                        if resp.ok:
+                            datos_curso = resp.json()
+                    except Exception:
+                        logger.info(
+                            "Job %s:   %s (%s) -> error de red pidiendo notas",
+                            job_id, c_info["cod_curso"], periodo,
+                        )
+
+                    if datos_curso:
+                        # Diagnóstico TEMPORAL: confirmar en los logs de Render
+                        # la forma real de la respuesta la primera vez que esto
+                        # corre en vivo, por si algún nombre de clave no calza
+                        # exactamente con lo documentado. Se puede quitar una
+                        # vez confirmado.
+                        logger.info(
+                            "Job %s:   %s (%s) -> claves recibidas: %s",
+                            job_id, c_info["cod_curso"], periodo, list(datos_curso.keys()),
+                        )
+
+                        for ev in datos_curso.get("data", []):
+                            nom_e = (ev.get("descripcion") or "").strip()
+                            etiqueta = simplificar_etiqueta(nom_e) if nom_e else None
+                            if etiqueta:
+                                try:
+                                    val_n = float(ev.get("nota"))
+                                except (TypeError, ValueError):
+                                    val_n = None
+                                evaluaciones.append(
+                                    {
+                                        "etiqueta": etiqueta,
+                                        "n_intralu": extraer_n_intralu(nom_e),
+                                        "nota": val_n,
+                                    }
                                 )
-                                continue
-                            # Diagnóstico tras agotar los reintentos: capturamos qué
-                            # nos devolvió realmente la página en vez de solo saber
-                            # que se agotó el tiempo — así distinguimos "estaba
-                            # cargando, muy lento" de "la UNI nos mandó una página de
-                            # bloqueo/verificación distinta a la normal" (sospecha:
-                            # IPs de datacenter tratadas distinto a residenciales).
-                            try:
-                                titulo_pagina = page.title()
-                                fragmento_html = page.content()[:300].replace("\n", " ")
-                            except Exception:
-                                titulo_pagina = "(no se pudo leer)"
-                                fragmento_html = "(no se pudo leer)"
-                            logger.info(
-                                "Job %s: sin tabla de notas en %s (%s) tras %d intentos — título: %r — inicio HTML: %r",
-                                job_id, c_info["cod_curso"], periodo, MAX_INTENTOS_NOTAS, titulo_pagina, fragmento_html,
-                            )
 
-                    # Fórmulas de evaluación: se leen de la MISMA página en la
-                    # que ya estamos paradxs (url_det), sin navegar a ningún
-                    # lado nuevo. Se intenta siempre, haya o no evaluaciones
-                    # todavía — "Fórmula Nota Final" suele estar disponible
-                    # desde el inicio del curso, antes que las notas mismas.
-                    formula_practicas_raw, formula_final_raw = _extraer_formulas_curso(page)
+                        formulas = datos_curso.get("formulas") or {}
+                        formula_practicas = formulas.get("practicas")
+                        formula_nota_final = formulas.get("teoria")
+
+                        promedios = datos_curso.get("promedios") or {}
+                        promedio_practicas = promedios.get("promedio_practicas")
+                        promedio_final = promedios.get("promedio_final")
+                        nota_asistencia = promedios.get("nota_asistencia")
 
                     logger.info(
-                        "Job %s:   %s (%s) -> %d evaluaciones encontradas, fórmulas: pp=%s final=%s",
+                        "Job %s:   %s (%s) -> %d evaluaciones, fórmulas: pp=%s final=%s",
                         job_id, c_info["cod_curso"], periodo, len(evaluaciones),
-                        "sí" if formula_practicas_raw else "no",
-                        "sí" if formula_final_raw else "no",
+                        "sí" if formula_practicas else "no",
+                        "sí" if formula_nota_final else "no",
                     )
 
+                    # Nombres de campo elegidos a propósito para calzar EXACTO
+                    # con lo que ya espera guardarResultadoSync() en
+                    # login-multifacultad.js (formula_practicas,
+                    # formula_nota_final, promedio_practicas, promedio_final,
+                    # nota_asistencia) — así conectar el frontend más
+                    # adelante no requiere tocar el mapeo de campos.
                     creditos_val = c_info["creditos"]
                     cursos_lista.append(
                         {
@@ -568,8 +561,11 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                             else creditos_val,
                             "evaluaciones": evaluaciones,
                             "seccion": c_info["seccion"],
-                            "formula_practicas_raw": formula_practicas_raw,
-                            "formula_final_raw": formula_final_raw,
+                            "formula_practicas": formula_practicas,
+                            "formula_nota_final": formula_nota_final,
+                            "promedio_practicas": promedio_practicas,
+                            "promedio_final": promedio_final,
+                            "nota_asistencia": nota_asistencia,
                         }
                     )
 
