@@ -2,21 +2,19 @@
 // (como las guarda SIGA en Supabase) al objeto `valores` que espera
 // formula-engine.js, ej. { N1: 17, N2: 18, PP: 14.2, EP: 12 }.
 //
-// Regla de mapeo (confirmada con datos reales de INTRALU):
-//   - es_examen === false -> es una práctica/laboratorio -> variable
-//     "N" + camnot (camnot SÍ es el número correcto: PRACTICA 1 trae
-//     camnot=1, PRACTICA 2 trae camnot=2, etc. — no se extrae el
-//     número del texto de "descripcion", que podría variar).
-//   - es_examen === true  -> se clasifica por palabra clave en
-//     "descripcion": contiene "SUSTITUTORIO" -> ES, si no contiene
-//     "PARCIAL" -> EP, si no contiene "FINAL" -> EF. Se usa palabra
-//     clave (no el número fijo de camnot, ej. 13/14/15) porque ese
-//     número podría no ser el mismo en otra facultad.
-//
-// PENDIENTE DE VERIFICAR: labs y monografías — hoy se asume que caen
-// dentro de "es_examen === false" igual que las prácticas normales,
-// pero esto no se ha confirmado todavía con un curso real que tenga
-// alguno de los dos.
+// Regla de mapeo (confirmada con datos reales de INTRALU, incluyendo
+// labs y monografías — ver notas_curso de BQU01/BRC01 del 2023-2):
+//   - clasificarExamen(descripcion) reconoce EP/EF/ES por palabra
+//     clave en el texto ("PARCIAL"/"FINAL"/"SUSTITUTORIO"). Si
+//     reconoce algo, esa evaluación es un examen — punto.
+//   - Todo lo demás (prácticas, laboratorios, monografías) usa
+//     "N" + camnot como variable (camnot SÍ es el número correcto:
+//     PRACTICA 1 trae camnot=1, LAB5 trae camnot=5, etc.).
+//   - OJO: NO se usa el campo ev.es_examen que manda INTRALU — se
+//     confirmó que viene mal en algunos cursos (ej. BEG01 marca TODAS
+//     sus prácticas como examen; SI501 marca solo una práctica suelta
+//     como examen, sin patrón). La única fuente confiable es el texto
+//     de "descripcion".
 
 function notaComoNumero(nota) {
     if (nota === null || nota === undefined || nota === '') return null;
