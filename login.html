@@ -251,11 +251,19 @@
                 <span id="progresoSyncTexto">Conectando...</span>
             </div>
 
-            <form class="form-login" id="formSync" autocomplete="off">
-                <div id="sync-intralu-estado-extension"
-                    style="display:none; padding:10px 12px; border-radius:8px; font-size:0.8rem; margin-bottom:6px; line-height:1.6;">
-                </div>
+            <div class="tarjeta-eleccion" style="flex-direction:column; align-items:stretch; gap:8px; margin:0 0 18px;">
+                <p style="margin:0; font-size:13px; font-weight:600; color:var(--brand-morado);">📌 Antes de sincronizar
+                    (solo la primera vez)</p>
+                <p style="margin:0; font-size:12px; color:var(--ink-soft); line-height:1.5;">
+                    Arrastra este botón a tu barra de marcadores — no le hagas clic aquí:
+                </p>
+                <a href="#" id="bookmarkletLink"
+                    style="align-self:flex-start; display:inline-block; background:var(--brand-morado); color:#fff; font-weight:600; font-size:13px; padding:8px 16px; border-radius:8px; text-decoration:none; cursor:grab;">
+                    📌 Sincronizar SIGA
+                </a>
+            </div>
 
+            <form class="form-login" id="formSync" autocomplete="off">
                 <button type="button" class="select-custom-trigger" id="syncPeriodoTrigger" aria-haspopup="listbox"
                     aria-expanded="false">
                     <span id="syncPeriodoTriggerTexto">Elige el periodo a sincronizar</span>
@@ -271,8 +279,9 @@
                         style="display:none; flex:1; border:1px solid var(--brand-morado); background:#fff; color:var(--brand-morado); border-radius:10px; font-weight:600; cursor:pointer;">Cancelar</button>
                 </div>
                 <p class="aviso-nota">
-                    🔄 Mantén tu sesión de INTRALU activa mientras se sincroniza.<br>
-                    ✅ Cuando termine, puedes cerrar INTRALU sin problema.
+                    🔄 Al presionar Sincronizar se abrirá INTRALU en una pestaña nueva.<br>
+                    📌 Ahí, haz clic en tu marcador "Sincronizar SIGA" y espera a que termine.<br>
+                    ✅ Cuando veas el mensaje de listo, puedes cerrar esa pestaña.
                 </p>
             </form>
 

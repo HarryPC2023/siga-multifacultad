@@ -1,15 +1,27 @@
 // js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
-// REESCRITO DESDE CERO para el flujo nuevo (sin backend propio, sin
-// Playwright, sin selección manual de periodo). La extensión "SIGA
-// Conector" (intralu_content_script.js + background.js) trae directo
-// de INTRALU los cursos, notas y fórmulas del periodo que el alumno
-// tenga activo en su sesión — SIGA solo pide el sync y guarda el
-// resultado en Supabase (RLS con el user_id anónimo de este sandbox).
+// Flujo con BOOKMARKLET (reemplaza a la extensión SIGA Conector para
+// este sandbox): SIGA abre INTRALU en una pestaña nueva guardando su
+// referencia; el alumno ejecuta ahí el bookmarklet "Sincronizar SIGA"
+// (bookmarklet-sync.js, cargado dinámicamente); esa pestaña hace los
+// fetch() reales a INTRALU y reporta el resultado de vuelta a esta
+// pestaña vía postMessage a window.opener. SIGA guarda con su propia
+// sesión de Supabase — la pestaña de INTRALU nunca ve esas credenciales.
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { FACULTADES } from './facultades-datos.js';
+import { parsearAvanceCurricular } from './avance-curricular-parser.js';
+import { guardarAvanceCurricular } from './avance-curricular-guardar.js';
+import * as pdfjsLib from '../vendor-pdfjs/pdf.min.mjs';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+    new URL('../vendor-pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
 const CLAVE_SESSION = 'siga_multifacultad_seleccion';
-const EXTENSION_SIGA_URL = 'https://github.com/HarryPC2023/siga-conector/releases/download/v1.0.0/siga-conector-extension.zip';
+
+// Dominio real de INTRALU, y el archivo que el bookmarklet inyecta ahí.
+// El "?t=" al final evita que el navegador sirva una versión vieja del
+// script cacheada — cada ejecución del bookmarklet pide la más reciente.
+const BASE_INTRALU = 'https://alumnos.uni.edu.pe';
+const URL_BOOKMARKLET_SYNC_JS = 'https://harrypc2023.github.io/siga-multifacultad/js/bookmarklet-sync.js';
 
 let facultadElegida, carreraElegida;
 
@@ -28,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     pintarEleccion();
+    prepararEnlaceBookmarklet();
 
     // 2. Sesión anónima (sandbox de prueba, sin cuenta real).
     let user;
@@ -155,9 +168,34 @@ function mostrarBloquePeriodoIngreso(userId) {
 }
 
 /* ============================================================
-   BLOQUE — Sync con Intralú (vía SIGA Conector, flujo directo)
+   BLOQUE — Enlace del bookmarklet (reemplaza al link de instalar
+   la extensión). El href se arma en JS, no en el HTML, porque
+   incluye una marca de tiempo para evitar caché del script.
+   ============================================================ */
+function prepararEnlaceBookmarklet() {
+    const enlace = document.getElementById('bookmarkletLink');
+    if (!enlace) return;
+    enlace.href = urlBookmarklet();
+    // Evita que un clic normal (en vez de arrastrar) navegue la propia
+    // pestaña de SIGA con el script — el bookmarklet solo tiene sentido
+    // ejecutado dentro de INTRALU.
+    enlace.addEventListener('click', (e) => {
+        e.preventDefault();
+        mostrarBanner('advertencia', 'Arrastra este botón a tu barra de marcadores — no hace falta hacerle clic aquí.');
+    });
+}
+
+function urlBookmarklet() {
+    const codigo = `(function(){var s=document.createElement('script');s.src='${URL_BOOKMARKLET_SYNC_JS}?t='+Date.now();document.body.appendChild(s);})();`;
+    return `javascript:${encodeURIComponent(codigo)}`;
+}
+
+/* ============================================================
+   BLOQUE — Sync con Intralú (vía bookmarklet)
    ============================================================ */
 let syncCancelada = false;
+let pestanaIntralu = null;
+let listenerActivo = null;
 
 /* Da el (anio, tipo) cronológicamente ANTERIOR a un (anio, tipo) dado.
    Orden real dentro de un año: tipo 1 (mar-jul) -> tipo 2 (ago-dic) ->
@@ -212,75 +250,68 @@ function mostrarBloqueSync(userId, periodoIngreso) {
     document.getElementById('btnCancelarSync').addEventListener('click', cancelarSyncEnCurso);
 }
 
-/* Le pregunta a la extensión si está presente, vía postMessage — el
-   content script contesta con SIGA_EXT_PONG casi al instante. Si no
-   hay extensión instalada, nadie contesta y se resuelve false tras
-   el timeout. */
-function pingExtensionSiga(timeoutMs = 700) {
+/* Abre INTRALU en una pestaña nueva (guardando la referencia) y espera
+   el resultado del bookmarklet en dos tiempos:
+     1) SIGA_BM_LISTO — el bookmarklet ya cargó, pide el periodo.
+     2) SIGA_BM_RESULTADO — trajo notas (+ opcionalmente el Avance
+        Curricular) y los manda de vuelta.
+   Se valida siempre que el mensaje venga del origen real de INTRALU. */
+function abrirIntraluYEsperarBookmarklet(periodo, timeoutMs = 240000) {
     return new Promise((resolve) => {
-        let resuelto = false;
-        function onMessage(event) {
-            if (event.source !== window || event.data?.type !== 'SIGA_EXT_PONG') return;
-            resuelto = true;
-            window.removeEventListener('message', onMessage);
-            resolve(true);
+        pestanaIntralu = window.open(BASE_INTRALU, 'siga_bookmarklet_sync');
+        if (!pestanaIntralu) {
+            resolve({ ok: false, motivo: 'popup_bloqueado', detalle: 'El navegador bloqueó la ventana de INTRALU. Permite ventanas emergentes para este sitio e intenta de nuevo.' });
+            return;
         }
-        window.addEventListener('message', onMessage);
-        window.postMessage({ type: 'SIGA_EXT_PING' }, window.location.origin);
-        setTimeout(() => {
-            if (resuelto) return;
-            window.removeEventListener('message', onMessage);
-            resolve(false);
-        }, timeoutMs);
-    });
-}
 
-/* Pide la sincronización real (cursos + notas + fórmulas del periodo
-   activo en INTRALU). Puede tardar: la extensión pide curso por curso,
-   uno a la vez, para no saturar a INTRALU — con 7-10 cursos, unos
-   cuantos segundos es normal. */
-function pedirSyncExtensionSiga(periodo, timeoutMs = 120000) {
-    return new Promise((resolve) => {
         let resuelto = false;
-        function onMessage(event) {
-            if (event.source !== window || event.data?.type !== 'SIGA_EXT_SYNC_RESULT') return;
+        const idTimeout = setTimeout(() => {
+            if (resuelto) return;
             resuelto = true;
             window.removeEventListener('message', onMessage);
-            resolve(event.data);
-        }
-        window.addEventListener('message', onMessage);
-        window.postMessage({ type: 'SIGA_EXT_REQUEST_SYNC', periodo }, window.location.origin);
-        setTimeout(() => {
-            if (resuelto) return;
-            window.removeEventListener('message', onMessage);
-            resolve({ ok: false, motivo: 'timeout', detalle: 'La sincronización está tardando demasiado. Intenta de nuevo.' });
+            listenerActivo = null;
+            resolve({ ok: false, motivo: 'timeout', detalle: 'No llegó ninguna respuesta desde INTRALU. Verifica que ejecutaste el bookmarklet "Sincronizar SIGA" estando en esa pestaña.' });
         }, timeoutMs);
+
+        function onMessage(event) {
+            if (event.origin !== BASE_INTRALU) return;
+            if (!event.data || typeof event.data !== 'object') return;
+
+            if (event.data.type === 'SIGA_BM_LISTO') {
+                event.source.postMessage({ type: 'SIGA_BM_PERIODO', periodo }, BASE_INTRALU);
+                return;
+            }
+
+            if (event.data.type === 'SIGA_BM_RESULTADO') {
+                if (resuelto) return;
+                resuelto = true;
+                clearTimeout(idTimeout);
+                window.removeEventListener('message', onMessage);
+                listenerActivo = null;
+                resolve({ ok: true, ...event.data });
+            }
+        }
+
+        listenerActivo = onMessage;
+        window.addEventListener('message', onMessage);
     });
 }
 
 function mensajeError(resultado) {
     const motivos = {
-        sin_pestana_intralu: 'Abre INTRALU en otra pestaña, inicia sesión, y vuelve a intentar.',
-        lista_cursos_fallo: resultado.detalle || 'No se pudo cargar la lista de cursos desde INTRALU.',
-        sin_cursos: resultado.detalle || 'No se encontró ningún curso matriculado en INTRALU.',
+        popup_bloqueado: resultado.detalle,
         timeout: resultado.detalle,
+        sin_cursos: resultado.detalle || 'No se encontró ningún curso matriculado en INTRALU.',
+        periodo_no_coincide: resultado.detalle,
         cancelado: 'Sincronización cancelada.',
         sin_periodo: 'Elige un periodo para sincronizar.',
+        error_inesperado: resultado.detalle,
     };
     return motivos[resultado.motivo]
         || resultado.detalle
         || 'No pudimos conectar con INTRALU. Probablemente está caído o en mantenimiento ahora mismo. No es un error de SIGA.';
 }
 
-function mostrarEstadoExtension(html) {
-    const el = document.getElementById('sync-intralu-estado-extension');
-    el.style.display = 'block';
-    el.style.background = '#FBE1E1';
-    el.innerHTML = html;
-}
-function ocultarEstadoExtension() {
-    document.getElementById('sync-intralu-estado-extension').style.display = 'none';
-}
 function mostrarBanner(tipo, texto) {
     const banner = document.getElementById('bannerSync');
     banner.className = `banner-estado visible ${tipo}`;
@@ -303,11 +334,11 @@ function numeroOMulo(valor) {
     return Number.isNaN(n) ? null : n;
 }
 
-/* Guarda el resultado completo de la extensión en las 2 tablas nuevas:
-   formulas_curso (compartida por sección, no por alumno) y notas_curso
-   (con las evaluaciones crudas en jsonb, sin mapear a N1/EP/etc. —
-   eso lo hace formula-mapper.js al vuelo, cuando se necesita calcular
-   algo, nunca al guardar). */
+/* Guarda notas + fórmulas en las 2 tablas nuevas: formulas_curso
+   (compartida por sección, no por alumno) y notas_curso (con las
+   evaluaciones crudas en jsonb, sin mapear a N1/EP/etc. — eso lo hace
+   formula-mapper.js al vuelo, cuando se necesita calcular algo, nunca
+   al guardar). */
 async function guardarResultadoSync(userId, resultado) {
     if (!resultado.cursos.length) return;
 
@@ -346,13 +377,44 @@ async function guardarResultadoSync(userId, resultado) {
     }, { onConflict: 'user_id' });
 }
 
-function pedirCancelarExtensionSiga() {
-    window.postMessage({ type: 'SIGA_EXT_REQUEST_CANCELAR_SYNC' }, window.location.origin);
+/* Extrae el texto del PDF (pdf.js) y lo pasa por el parser + guardado
+   ya validados — mismo patrón que usaba avance-curricular-debug.js,
+   ahora conectado al flujo real en vez de a un botón de prueba suelto. */
+function base64AArrayBuffer(base64) {
+    const binario = atob(base64);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    return bytes;
+}
+
+async function extraerTextoPdf(bytes) {
+    const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+    let textoCompleto = '';
+    for (let numPagina = 1; numPagina <= doc.numPages; numPagina++) {
+        const pagina = await doc.getPage(numPagina);
+        const contenido = await pagina.getTextContent();
+        const lineaPagina = contenido.items.map((item) => item.str).join(' ');
+        textoCompleto += `\n\n===== PÁGINA ${numPagina} =====\n\n${lineaPagina}`;
+    }
+    return textoCompleto;
+}
+
+async function guardarAvanceCurricularDesdeBase64(userId, base64) {
+    const bytes = base64AArrayBuffer(base64);
+    const texto = await extraerTextoPdf(bytes);
+    const estructurado = parsearAvanceCurricular(texto);
+    return guardarAvanceCurricular(userId, estructurado);
 }
 
 function cancelarSyncEnCurso() {
     syncCancelada = true;
-    pedirCancelarExtensionSiga();
+    if (listenerActivo) {
+        window.removeEventListener('message', listenerActivo);
+        listenerActivo = null;
+    }
+    if (pestanaIntralu && !pestanaIntralu.closed) {
+        pestanaIntralu.close();
+    }
     ocultarProgreso();
     mostrarBanner('advertencia', 'Sincronización cancelada.');
     document.getElementById('btnCancelarSync').style.display = 'none';
@@ -364,41 +426,26 @@ function cancelarSyncEnCurso() {
 async function manejarSync(e, userId) {
     e.preventDefault();
     ocultarBanner();
-    ocultarEstadoExtension();
     document.getElementById('resumenFinal').classList.remove('visible');
     syncCancelada = false;
 
     const btnSync = document.getElementById('btnSync');
     const btnCancelar = document.getElementById('btnCancelarSync');
-    btnSync.disabled = true;
 
-    // Paso 1: ¿está instalado el conector?
-    btnSync.textContent = 'Verificando conector...';
-    const hayExtension = await pingExtensionSiga();
-    if (!hayExtension) {
-        mostrarEstadoExtension(
-            `⚠️ No detectamos el conector de SIGA en tu navegador.
-             <br><a href="${EXTENSION_SIGA_URL}" target="_blank" style="color:var(--brand-morado); font-weight:600;">Agrégalo aquí</a> y vuelve a presionar Sincronizar.`
-        );
-        btnSync.disabled = false;
-        btnSync.textContent = 'Sincronizar';
-        return;
-    }
-
-    // Paso 2: ¿qué periodo se va a sincronizar?
+    // Paso 1: ¿qué periodo se va a sincronizar?
     const periodoElegido = document.getElementById('syncPeriodoValor').value;
     if (!periodoElegido) {
         mostrarBanner('error', 'Elige un periodo para sincronizar.');
-        btnSync.disabled = false;
-        btnSync.textContent = 'Sincronizar';
         return;
     }
 
-    // Paso 3: sincronizar — ahora sí hay algo real que cancelar.
-    btnSync.textContent = 'Sincronizando...';
+    // Paso 2: abrir INTRALU y esperar al bookmarklet.
+    btnSync.disabled = true;
+    btnSync.textContent = 'Abriendo INTRALU...';
     btnCancelar.style.display = 'block';
-    mostrarProgreso(`Sincronizando tus cursos de ${periodoElegido.slice(0, 4)}-${periodoElegido.slice(4)}... esto puede tardar unos segundos.`);
-    const resultado = await pedirSyncExtensionSiga(periodoElegido);
+    mostrarProgreso('Se abrió una pestaña de INTRALU. Haz clic en tu marcador "Sincronizar SIGA" estando ahí.');
+
+    const resultado = await abrirIntraluYEsperarBookmarklet(periodoElegido);
     ocultarProgreso();
     btnCancelar.style.display = 'none';
 
@@ -411,16 +458,43 @@ async function manejarSync(e, userId) {
         return;
     }
 
-    // Paso 3: guardar en Supabase.
+    const resultadoNotas = resultado.notas;
+    if (!resultadoNotas || !resultadoNotas.ok) {
+        mostrarBanner('error', mensajeError(resultadoNotas || { motivo: 'error_inesperado' }));
+        btnSync.disabled = false;
+        btnSync.textContent = 'Sincronizar';
+        return;
+    }
+
+    // Paso 3: guardar notas + fórmulas, y el Avance Curricular si vino.
     try {
-        mostrarProgreso('Guardando...');
-        await guardarResultadoSync(userId, resultado);
+        mostrarProgreso('Guardando tus notas...');
+        await guardarResultadoSync(userId, resultadoNotas);
+
+        let textoAvance = '';
+        if (resultado.avanceCurricularBase64) {
+            mostrarProgreso('Guardando tu Avance Curricular...');
+            try {
+                const resultadoAvance = await guardarAvanceCurricularDesdeBase64(userId, resultado.avanceCurricularBase64);
+                textoAvance = resultadoAvance.ok
+                    ? ` Tu carrera (${resultadoAvance.facultad} / ${resultadoAvance.carrera}) quedó detectada automáticamente.`
+                    : ` (No se pudo procesar tu Avance Curricular: ${resultadoAvance.detalle || resultadoAvance.motivo}.)`;
+            } catch (errAvance) {
+                textoAvance = ' (No se pudo procesar tu Avance Curricular, intenta sincronizar de nuevo más tarde.)';
+                console.error('Error procesando Avance Curricular:', errAvance);
+            }
+        } else if (resultado.avanceCurricularError) {
+            textoAvance = ' (No se pudo descargar tu Avance Curricular esta vez.)';
+        }
+
         ocultarProgreso();
 
-        let texto = `${resultado.cursos.length} curso(s) sincronizado(s) en ${resultado.periodo}.`;
-        if (resultado.errores.length) {
-            texto += ` (${resultado.errores.length} curso(s) no se pudieron traer, intenta de nuevo más tarde.)`;
+        let texto = `${resultadoNotas.cursos.length} curso(s) sincronizado(s) en ${resultadoNotas.periodo}.`;
+        if (resultadoNotas.errores.length) {
+            texto += ` (${resultadoNotas.errores.length} curso(s) no se pudieron traer, intenta de nuevo más tarde.)`;
         }
+        texto += textoAvance;
+
         document.getElementById('resumenFinalTexto').textContent = texto;
         document.getElementById('resumenFinal').classList.add('visible');
     } catch (err) {
