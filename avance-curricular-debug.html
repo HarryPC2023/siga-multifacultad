@@ -1,91 +1,126 @@
-<!DOCTYPE html>
-<html lang="es">
+// js/avance-curricular-debug.js — herramienta temporal para validar la
+// extracción de texto del Avance Curricular ANTES de escribir el parser
+// real. No guarda nada en Supabase, no toca ninguna tabla — solo pide el
+// PDF, lo pasa por pdf.js, y muestra el texto crudo en pantalla.
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIGA Multifacultad - Debug Avance Curricular</title>
-    <style>
-        body {
-            margin: 0;
-            font-family: system-ui, sans-serif;
-            background: #f5f5f7;
-            color: #1a1a1a;
-        }
+import * as pdfjsLib from '../vendor-pdfjs/pdf.min.mjs';
+import { parsearAvanceCurricular } from './avance-curricular-parser.js';
+import { guardarAvanceCurricular } from './avance-curricular-guardar.js';
+import { obtenerSesion } from './auth-siga.js';
 
-        .contenedor {
-            max-width: 760px;
-            margin: 0 auto;
-            padding: 24px 18px 60px;
-        }
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+new URL('../vendor-pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
-        h1 {
-            font-size: 18px;
-        }
+const btnProbar = document.getElementById('btnProbar');
+const btnCopiar = document.getElementById('btnCopiar');
+const estado = document.getElementById('estado');
+const salida = document.getElementById('salida');
 
-        p.aviso {
-            font-size: 13px;
-            color: #666;
-        }
+function mostrarEstado(texto, esError = false) {
+estado.textContent = texto;
+estado.className = esError ? 'error' : '';
+}
 
-        button {
-            font-size: 14px;
-            font-weight: 700;
-            padding: 10px 20px;
-            border-radius: 8px;
-            border: none;
-            background: #6c3ce9;
-            color: #fff;
-            cursor: pointer;
-        }
+// Mismo patrón que login-multifacultad.js: postMessage hacia el content
+// script de la extensión, que reenvía a background.js y devuelve la
+// respuesta por otro postMessage.
+function pedirAvanceCurricularExtension(timeoutMs = 60000) {
+return new Promise((resolve) => {
+let resuelto = false;
+function onMessage(event) {
+if (event.source !== window || event.data?.type !== 'SIGA_EXT_AVANCE_CURRICULAR_RESULT') return;
+resuelto = true;
+window.removeEventListener('message', onMessage);
+resolve(event.data);
+}
+window.addEventListener('message', onMessage);
+window.postMessage({ type: 'SIGA_EXT_REQUEST_AVANCE_CURRICULAR' }, window.location.origin);
+setTimeout(() => {
+if (resuelto) return;
+window.removeEventListener('message', onMessage);
+resolve({ ok: false, motivo: 'timeout', detalle: 'La extensión no respondió a tiempo.' });
+}, timeoutMs);
+});
+}
 
-        button:disabled {
-            opacity: .5;
-            cursor: default;
-        }
+function base64AArrayBuffer(base64) {
+const binario = atob(base64);
+const bytes = new Uint8Array(binario.length);
+for (let i = 0; i < binario.length; i++) bytes[i]=binario.charCodeAt(i); return bytes; } async function
+    extraerTextoPdf(bytes) { const doc=await pdfjsLib.getDocument({ data: bytes }).promise; let textoCompleto='' ; for
+    (let numPagina=1; numPagina <=doc.numPages; numPagina++) { const pagina=await doc.getPage(numPagina); const
+    contenido=await pagina.getTextContent(); const lineaPagina=contenido.items.map((item)=> item.str).join(' ');
+    textoCompleto += `\n\n===== PÁGINA ${numPagina} =====\n\n${lineaPagina}`;
+    }
+    return textoCompleto;
+    }
 
-        #estado {
-            margin: 14px 0;
-            font-size: 13px;
-        }
+    btnProbar.addEventListener('click', async () => {
+    btnProbar.disabled = true;
+    btnCopiar.style.display = 'none';
+    salida.textContent = '';
+    mostrarEstado('Verificando tu sesión de SIGA...');
 
-        #estado.error {
-            color: #b4232a;
-        }
+    const sesion = await obtenerSesion();
+    if (!sesion) {
+    mostrarEstado('No hay sesión de SIGA activa — inicia sesión primero en login.html (con Google) y vuelve a esta
+    página.', true);
+    btnProbar.disabled = false;
+    return;
+    }
 
-        #salida {
-            white-space: pre-wrap;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 11px;
-            line-height: 1.5;
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            padding: 14px;
-            max-height: 70vh;
-            overflow: auto;
-        }
+    mostrarEstado('Pidiéndole el PDF a la extensión...');
 
-        #btnCopiar {
-            margin-top: 10px;
-            background: #1a1a1a;
-        }
-    </style>
-</head>
+    const resultado = await pedirAvanceCurricularExtension();
+    if (!resultado.ok) {
+    mostrarEstado(`Error: ${resultado.detalle || resultado.motivo}`, true);
+    btnProbar.disabled = false;
+    return;
+    }
 
-<body>
-    <div class="contenedor">
-        <h1>🧪 Debug — Avance Curricular</h1>
-        <p class="aviso">Herramienta temporal, solo para revisar cómo pdf.js extrae el texto del PDF antes de
-            construir el parser real. Necesitas: la extensión SIGA Conector instalada, y una pestaña de INTRALU
-            abierta con tu sesión activa.</p>
-        <button id="btnProbar">Descargar y extraer texto</button>
-        <div id="estado"></div>
-        <pre id="salida"></pre>
-        <button id="btnCopiar" style="display:none;">📋 Copiar todo el texto</button>
-    </div>
+    mostrarEstado('PDF recibido, extrayendo texto con pdf.js...');
+    try {
+    const bytes = base64AArrayBuffer(resultado.base64);
+    const texto = await extraerTextoPdf(bytes);
+    const estructurado = parsearAvanceCurricular(texto);
 
-    <script type="module" src="js/avance-curricular-debug.js"></script>
-</body>
+    const resumenCiclos = estructurado.ciclos
+    .map((c) => `Ciclo ${c.numero}: ${c.cursos.length} cursos`)
+    .join('\n');
 
-</html>
+    mostrarEstado('Texto parseado, guardando en avance_curricular...');
+    const resultadoGuardado = await guardarAvanceCurricular(sesion.user.id, estructurado);
+
+    salida.textContent =
+    `===== RESULTADO DEL GUARDADO =====\n${JSON.stringify(resultadoGuardado, null, 2)}\n\n` +
+    `===== ENCABEZADO =====\n${JSON.stringify({
+    facultad: estructurado.facultad,
+    especialidad: estructurado.especialidad,
+    planEstudio: estructurado.planEstudio,
+    cicloRelativo: estructurado.cicloRelativo,
+    }, null, 2)}\n\n` +
+    `===== RESUMEN =====\n${resumenCiclos}\n` +
+    `Electivos: ${estructurado.electivos.length}\n` +
+    `Electivos complementarios: ${estructurado.electivosComplementarios.length}\n\n` +
+    `===== JSON COMPLETO =====\n${JSON.stringify(estructurado, null, 2)}\n\n` +
+    `===== TEXTO CRUDO (pdf.js) =====\n${texto}`;
+
+    mostrarEstado(
+    resultadoGuardado.ok
+    ? `Listo — ${resultadoGuardado.cursosGuardados} cursos guardados en avance_curricular (${resultadoGuardado.facultad}
+    / ${resultadoGuardado.carrera}).`
+    : `Se parseó bien, pero el guardado falló: ${resultadoGuardado.detalle || resultadoGuardado.motivo}`,
+    !resultadoGuardado.ok
+    );
+    btnCopiar.style.display = 'inline-block';
+    } catch (e) {
+    mostrarEstado(`Error al procesar el PDF: ${e.message || e}`, true);
+    }
+    btnProbar.disabled = false;
+    });
+
+    btnCopiar.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(salida.textContent);
+    btnCopiar.textContent = '✅ Copiado';
+    setTimeout(() => { btnCopiar.textContent = '📋 Copiar todo el texto'; }, 1500);
+    });
