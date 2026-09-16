@@ -21,19 +21,29 @@ function extraerEncabezado(textoCrudo) {
     return { facultad, especialidad, codigo, cicloRelativo, planEstudio };
 }
 
-/* El código de estudiante de la UNI codifica el año de ingreso en los
-   primeros 4 dígitos (ej. "20231059E" -> ingresó en 2023). Sirve para
-   derivar/confirmar el periodo de ingreso sin depender de que el alumno
-   lo recuerde marcar bien a mano en el selector.
-   SUPUESTO SIN VERIFICAR: se asume que el ingreso siempre es en el
-   periodo 1 (marzo-julio) — si hay alumnos que ingresan por traslado o
-   examen de mitad de año (periodo 2), esto quedaría un semestre
-   adelantado. Falta confirmar con un caso real de alguien que haya
-   ingresado así antes de confiar en esto a ciegas. */
+/* El código de estudiante de la UNI codifica, en sus primeros 5 dígitos:
+   - los 4 primeros: año de ingreso (ej. "2023")
+   - el 5to: modalidad de ingreso — 0 = Ordinario examen de febrero
+     (entra en el periodo 1, marzo-julio), 1 = Ordinario examen de
+     agosto (entra en el periodo 2, agosto-diciembre), 2 = Cepre,
+     4 = concurso nacional/Colegio Mayor, 5 = traslado externo.
+   (Confirmado por Harry con su propio código, 20231059E: el "1" es
+   justamente por haber ingresado en el examen de agosto de 2023, o
+   sea periodo 2 — no periodo 1 como se asumía antes de esta corrección.)
+
+   Solo 0 y 1 tienen un periodo de ingreso fijo y conocido. Cepre,
+   concurso y traslado NO lo tienen (varían caso a caso) — para esos
+   se devuelve null y el alumno debe confirmarlo él mismo, en vez de
+   inventar un periodo que podría estar mal. */
 function periodoIngresoDesdeCodigo(codigo) {
-    const anio = parseInt((codigo || '').slice(0, 4), 10);
+    const c = (codigo || '').trim();
+    const anio = parseInt(c.slice(0, 4), 10);
     if (Number.isNaN(anio) || anio < 2000 || anio > new Date().getFullYear()) return null;
-    return `${anio}1`;
+
+    const modalidad = c[4];
+    if (modalidad === '0') return `${anio}1`;
+    if (modalidad === '1') return `${anio}2`;
+    return null; // Cepre, concurso/Colegio Mayor o traslado: sin periodo fijo conocido
 }
 
 function parsearFilasDeSegmento(segmento) {
