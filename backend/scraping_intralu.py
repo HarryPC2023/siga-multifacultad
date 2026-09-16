@@ -1,5 +1,6 @@
 import io
 import logging
+import random
 import re
 import threading
 import time
@@ -11,6 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
 from pydantic import BaseModel, Field
 
 try:
@@ -1058,6 +1060,81 @@ def sync_horarios(credentials: LoginRequest):
         raise HTTPException(status_code=500, detail=f"Error en servidor: {str(e)}")
     finally:
         _semaforo_sync.release()
+
+
+def _login_intralu(codigo, password):
+    """Login NUEVO (código+contraseña, con stealth) — para pruebas, en
+    paralelo al login por cookie existente (_login_por_cookie), sin
+    reemplazarlo todavía. Devuelve una requests.Session ya autenticada."""
+    with Stealth().use_sync(sync_playwright()) as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1366, "height": 768},
+            locale="es-PE",
+        )
+        page = context.new_page()
+
+        page.goto("https://alumnos.uni.edu.pe/login", wait_until="domcontentloaded")
+        page.wait_for_timeout(random.randint(600, 1400))
+
+        page.click("#txt-codigo")
+        page.type("#txt-codigo", codigo, delay=random.randint(90, 190))
+        page.wait_for_timeout(random.randint(300, 800))
+
+        page.click("#txt-password")
+        page.type("#txt-password", password, delay=random.randint(90, 190))
+        page.wait_for_timeout(random.randint(400, 900))
+
+        page.click("#btn-login")
+
+        try:
+            page.wait_for_url("**/home**", timeout=20000)
+        except Exception:
+            browser.close()
+            raise HTTPException(status_code=401, detail="Código o contraseña incorrectos en Intralú.")
+
+        cookies_navegador = context.cookies()
+        browser.close()
+
+    sesion_cookie = xsrf_cookie = None
+    for c in cookies_navegador:
+        if c["name"] == "intranet_alumno_session":
+            sesion_cookie = c["value"]
+        elif c["name"] == "XSRF-TOKEN":
+            xsrf_cookie = c["value"]
+
+    if not sesion_cookie or not xsrf_cookie:
+        raise HTTPException(status_code=502, detail="El login pasó pero no se encontraron las cookies esperadas.")
+
+    sesion = requests.Session()
+    sesion.cookies.set("intranet_alumno_session", sesion_cookie, domain="alumnos.uni.edu.pe")
+    sesion.cookies.set("XSRF-TOKEN", xsrf_cookie, domain="alumnos.uni.edu.pe")
+    sesion.headers.update({
+        "X-XSRF-TOKEN": unquote(xsrf_cookie),
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://alumnos.uni.edu.pe/informacion-academica/cursos",
+    })
+    return sesion
+
+
+@app.post("/api/test-login")
+def test_login_intralu(credentials: LoginRequest):
+    """Endpoint TEMPORAL, solo para confirmar si el login con
+    código+contraseña (stealth) pasa el reCAPTCHA desde la IP real de
+    Render. No toca /api/sync-intralu ni ningún otro flujo existente —
+    se puede borrar apenas terminemos de confirmar el resultado."""
+    try:
+        sesion = _login_intralu(credentials.codigo, credentials.password)
+        return {"status": "ok", "cookies": list(sesion.cookies.keys())}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error en /api/test-login")
+        raise HTTPException(status_code=500, detail=f"Error inesperado: {e}")
 
 
 if __name__ == "__main__":
