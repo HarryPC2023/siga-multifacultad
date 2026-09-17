@@ -1,4 +1,4 @@
-aaaaaaa// js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
+// js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
 // Flujo por CÓDIGO+CONTRASEÑA (reemplaza al bookmarklet, que a su vez
 // había reemplazado a la extensión SIGA Conector): el alumno escribe su
 // código y contraseña de INTRALU aquí mismo; SIGA los manda una sola vez
