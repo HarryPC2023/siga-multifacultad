@@ -1,11 +1,12 @@
-// js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
-// Flujo con BOOKMARKLET (reemplaza a la extensión SIGA Conector para
-// este sandbox): SIGA abre INTRALU en una pestaña nueva guardando su
-// referencia; el alumno ejecuta ahí el bookmarklet "Sincronizar SIGA"
-// (bookmarklet-sync.js, cargado dinámicamente); esa pestaña hace los
-// fetch() reales a INTRALU y reporta el resultado de vuelta a esta
-// pestaña vía postMessage a window.opener. SIGA guarda con su propia
-// sesión de Supabase — la pestaña de INTRALU nunca ve esas credenciales.
+aaaaaaa// js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
+// Flujo por CÓDIGO+CONTRASEÑA (reemplaza al bookmarklet, que a su vez
+// había reemplazado a la extensión SIGA Conector): el alumno escribe su
+// código y contraseña de INTRALU aquí mismo; SIGA los manda una sola vez
+// al backend propio (scraping_intralu.py en Render), que hace login con
+// Playwright + stealth (pasa el reCAPTCHA) y trae notas+fórmulas por HTTP
+// directo. El backend responde al instante con un job_id y el trabajo
+// real corre en un hilo aparte — el frontend hace polling hasta que
+// termina. Ni el código ni la contraseña se guardan en ningún lado.
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { FACULTADES } from './facultades-datos.js';
 import { parsearAvanceCurricular } from './avance-curricular-parser.js';
@@ -17,11 +18,18 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 const CLAVE_SESSION = 'siga_multifacultad_seleccion';
 
-// Dominio real de INTRALU, y el archivo que el bookmarklet inyecta ahí.
-// El "?t=" al final evita que el navegador sirva una versión vieja del
-// script cacheada — cada ejecución del bookmarklet pide la más reciente.
-const BASE_INTRALU = 'https://alumnos.uni.edu.pe';
-const URL_BOOKMARKLET_SYNC_JS = 'https://harrypc2023.github.io/siga-multifacultad/js/bookmarklet-sync.js';
+// ⚠️ Confirmar con Harry el subdominio real asignado en Render al
+// servicio "siga-multifacultad" (se asume el mismo patrón que
+// siga-conexion-intralu.onrender.com, usado en horarios-index.html).
+const BACKEND_SYNC_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://localhost:8000/api/sync-intralu'
+    : 'https://siga-multifacultad.onrender.com/api/sync-intralu';
+
+// Cada cuántos ms se pregunta al backend si ya terminó, y cuánto se
+// espera como máximo antes de rendirse (Render free tier + Playwright
+// + varios cursos puede tardar 1-2 minutos reales).
+const INTERVALO_POLLING_MS = 3000;
+const TIMEOUT_POLLING_MS = 240000;
 
 let facultadElegida, carreraElegida;
 
@@ -40,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     pintarEleccion();
-    prepararEnlaceBookmarklet();
+    prepararOjoPassword();
 
     // 2. Sesión anónima (sandbox de prueba, sin cuenta real).
     let user;
@@ -168,34 +176,25 @@ function mostrarBloquePeriodoIngreso(userId) {
 }
 
 /* ============================================================
-   BLOQUE — Enlace del bookmarklet (reemplaza al link de instalar
-   la extensión). El href se arma en JS, no en el HTML, porque
-   incluye una marca de tiempo para evitar caché del script.
+   BLOQUE — Mostrar/ocultar la contraseña (mismo patrón que
+   .btn-ojo en la producción real de SIGA, ver index.html).
    ============================================================ */
-function prepararEnlaceBookmarklet() {
-    const enlace = document.getElementById('bookmarkletLink');
-    if (!enlace) return;
-    enlace.href = urlBookmarklet();
-    // Evita que un clic normal (en vez de arrastrar) navegue la propia
-    // pestaña de SIGA con el script — el bookmarklet solo tiene sentido
-    // ejecutado dentro de INTRALU.
-    enlace.addEventListener('click', (e) => {
-        e.preventDefault();
-        mostrarBanner('advertencia', 'Arrastra este botón a tu barra de marcadores — no hace falta hacerle clic aquí.');
+function prepararOjoPassword() {
+    const boton = document.getElementById('btnOjoSync');
+    const input = document.getElementById('syncPassword');
+    if (!boton || !input) return;
+    boton.addEventListener('click', () => {
+        const mostrar = input.type === 'password';
+        input.type = mostrar ? 'text' : 'password';
+        boton.setAttribute('aria-label', mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña');
     });
 }
 
-function urlBookmarklet() {
-    const codigo = `(function(){var s=document.createElement('script');s.src='${URL_BOOKMARKLET_SYNC_JS}?t='+Date.now();document.body.appendChild(s);})();`;
-    return `javascript:${encodeURIComponent(codigo)}`;
-}
-
 /* ============================================================
-   BLOQUE — Sync con Intralú (vía bookmarklet)
+   BLOQUE — Sync con Intralú (vía backend propio, código+contraseña)
    ============================================================ */
 let syncCancelada = false;
-let pestanaIntralu = null;
-let listenerActivo = null;
+let jobIdActual = null;
 
 /* Da el (anio, tipo) cronológicamente ANTERIOR a un (anio, tipo) dado.
    Orden real dentro de un año: tipo 1 (mar-jul) -> tipo 2 (ago-dic) ->
@@ -250,62 +249,93 @@ function mostrarBloqueSync(userId, periodoIngreso) {
     document.getElementById('btnCancelarSync').addEventListener('click', cancelarSyncEnCurso);
 }
 
-/* Abre INTRALU en una pestaña nueva (guardando la referencia) y espera
-   el resultado del bookmarklet en dos tiempos:
-     1) SIGA_BM_LISTO — el bookmarklet ya cargó, pide el periodo.
-     2) SIGA_BM_RESULTADO — trajo notas (+ opcionalmente el Avance
-        Curricular) y los manda de vuelta.
-   Se valida siempre que el mensaje venga del origen real de INTRALU. */
-function abrirIntraluYEsperarBookmarklet(periodo, timeoutMs = 240000) {
-    return new Promise((resolve) => {
-        pestanaIntralu = window.open(BASE_INTRALU, 'siga_bookmarklet_sync');
-        if (!pestanaIntralu) {
-            resolve({ ok: false, motivo: 'popup_bloqueado', detalle: 'El navegador bloqueó la ventana de INTRALU. Permite ventanas emergentes para este sitio e intenta de nuevo.' });
-            return;
+/* Espera a que pasen `ms` milisegundos, sin bloquear el hilo — usado
+   entre cada intento de polling. */
+function esperar(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/* Arranca el job en el backend (POST) y hace polling (GET) hasta que
+   quede "listo", "cancelado", o el backend responda un error real
+   (credenciales incorrectas, servidor ocupado, etc.). Nunca lanza: 
+   siempre resuelve con { ok, motivo?, detalle?, ...datos }, para que
+   manejarSync() decida qué mostrar sin try/catch anidados. */
+async function sincronizarConBackend(codigo, password, periodo) {
+    let jobId;
+    try {
+        const respInicio = await fetch(BACKEND_SYNC_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigo, password, periodo }),
+        });
+        const dataInicio = await respInicio.json();
+        if (!respInicio.ok) {
+            return { ok: false, motivo: 'error_inesperado', detalle: dataInicio.detail || 'No se pudo iniciar la sincronización.' };
+        }
+        jobId = dataInicio.job_id;
+    } catch {
+        return { ok: false, motivo: 'error_inesperado', detalle: 'No se pudo conectar con el servidor de sincronización. Probablemente está caído o en mantenimiento ahora mismo — no es un error tuyo.' };
+    }
+
+    jobIdActual = jobId;
+    const inicio = Date.now();
+
+    while (Date.now() - inicio < TIMEOUT_POLLING_MS) {
+        if (syncCancelada) {
+            return { ok: false, motivo: 'cancelado' };
         }
 
-        let resuelto = false;
-        const idTimeout = setTimeout(() => {
-            if (resuelto) return;
-            resuelto = true;
-            window.removeEventListener('message', onMessage);
-            listenerActivo = null;
-            resolve({ ok: false, motivo: 'timeout', detalle: 'No llegó ninguna respuesta desde INTRALU. Verifica que ejecutaste el bookmarklet "Sincronizar SIGA" estando en esa pestaña.' });
-        }, timeoutMs);
+        await esperar(INTERVALO_POLLING_MS);
 
-        function onMessage(event) {
-            if (event.origin !== BASE_INTRALU) return;
-            if (!event.data || typeof event.data !== 'object') return;
-
-            if (event.data.type === 'SIGA_BM_LISTO') {
-                event.source.postMessage({ type: 'SIGA_BM_PERIODO', periodo }, BASE_INTRALU);
-                return;
+        let data;
+        try {
+            const resp = await fetch(`${BACKEND_SYNC_URL}/${jobId}`);
+            data = await resp.json();
+            if (!resp.ok) {
+                return { ok: false, motivo: 'error_backend', detalle: data.detail };
             }
-
-            if (event.data.type === 'SIGA_BM_RESULTADO') {
-                if (resuelto) return;
-                resuelto = true;
-                clearTimeout(idTimeout);
-                window.removeEventListener('message', onMessage);
-                listenerActivo = null;
-                resolve({ ok: true, ...event.data });
-            }
+        } catch {
+            // Un fallo de red puntual durante el polling no es motivo
+            // para rendirse — se reintenta en la siguiente vuelta.
+            continue;
         }
 
-        listenerActivo = onMessage;
-        window.addEventListener('message', onMessage);
-    });
+        if (data.status === 'en_progreso') {
+            mostrarProgreso(data.periodo_actual
+                ? `Sincronizando ${data.periodo_actual} en INTRALU...`
+                : 'Iniciando sesión en INTRALU...');
+            continue;
+        }
+
+        if (data.status === 'cancelado') {
+            return { ok: false, motivo: 'cancelado' };
+        }
+
+        if (data.status === 'listo') {
+            const datosPeriodo = (data.periodos || {})[periodo];
+            if (!datosPeriodo || !datosPeriodo.cursos.length) {
+                return { ok: false, motivo: 'sin_cursos', detalle: 'No se encontró ningún curso matriculado en INTRALU para ese periodo.' };
+            }
+            return {
+                ok: true,
+                periodo,
+                cursos: datosPeriodo.cursos,
+                errores: datosPeriodo.errores || [],
+            };
+        }
+    }
+
+    return { ok: false, motivo: 'timeout', detalle: 'La sincronización está tardando más de lo esperado. Intenta de nuevo en un momento.' };
 }
 
 function mensajeError(resultado) {
     const motivos = {
-        popup_bloqueado: resultado.detalle,
         timeout: resultado.detalle,
         sin_cursos: resultado.detalle || 'No se encontró ningún curso matriculado en INTRALU.',
-        periodo_no_coincide: resultado.detalle,
         cancelado: 'Sincronización cancelada.',
         sin_periodo: 'Elige un periodo para sincronizar.',
         error_inesperado: resultado.detalle,
+        error_backend: resultado.detalle || 'No pudimos conectar con INTRALU. Probablemente está caído o en mantenimiento ahora mismo. No es un error de SIGA.',
     };
     return motivos[resultado.motivo]
         || resultado.detalle
@@ -408,12 +438,11 @@ async function guardarAvanceCurricularDesdeBase64(userId, base64) {
 
 function cancelarSyncEnCurso() {
     syncCancelada = true;
-    if (listenerActivo) {
-        window.removeEventListener('message', listenerActivo);
-        listenerActivo = null;
-    }
-    if (pestanaIntralu && !pestanaIntralu.closed) {
-        pestanaIntralu.close();
+    if (jobIdActual) {
+        // Best-effort: solo levanta la bandera en el backend, no hace
+        // falta esperar la respuesta para reflejar la cancelación acá.
+        fetch(`${BACKEND_SYNC_URL}/${jobIdActual}/cancelar`, { method: 'POST' }).catch(() => { });
+        jobIdActual = null;
     }
     ocultarProgreso();
     mostrarBanner('advertencia', 'Sincronización cancelada.');
@@ -432,60 +461,49 @@ async function manejarSync(e, userId) {
     const btnSync = document.getElementById('btnSync');
     const btnCancelar = document.getElementById('btnCancelarSync');
 
-    // Paso 1: ¿qué periodo se va a sincronizar?
+    // Paso 1: código, contraseña y periodo.
+    const codigo = document.getElementById('syncCodigo').value.trim().toUpperCase();
+    const password = document.getElementById('syncPassword').value;
     const periodoElegido = document.getElementById('syncPeriodoValor').value;
+
+    if (!codigo || !password) {
+        mostrarBanner('error', 'Ingresa tu código y tu contraseña de INTRALU.');
+        return;
+    }
     if (!periodoElegido) {
         mostrarBanner('error', 'Elige un periodo para sincronizar.');
         return;
     }
 
-    // Paso 2: abrir INTRALU y esperar al bookmarklet.
+    // Paso 2: mandar credenciales al backend (una sola vez, nunca se
+    // guardan) y esperar a que termine, con polling.
     btnSync.disabled = true;
-    btnSync.textContent = 'Abriendo INTRALU...';
+    btnSync.textContent = 'Conectando...';
     btnCancelar.style.display = 'block';
-    mostrarProgreso('Se abrió una pestaña de INTRALU. Haz clic en tu marcador "Sincronizar SIGA" estando ahí.');
+    mostrarProgreso('Iniciando sesión en INTRALU...');
 
-    const resultado = await abrirIntraluYEsperarBookmarklet(periodoElegido);
+    const resultadoNotas = await sincronizarConBackend(codigo, password, periodoElegido);
+    document.getElementById('syncPassword').value = '';
     ocultarProgreso();
     btnCancelar.style.display = 'none';
 
     if (syncCancelada) return; // ya canceló y reseteó la UI, ignoramos esta respuesta tardía
 
-    if (!resultado.ok) {
-        mostrarBanner('error', mensajeError(resultado));
+    if (!resultadoNotas.ok) {
+        mostrarBanner('error', mensajeError(resultadoNotas));
         btnSync.disabled = false;
         btnSync.textContent = 'Sincronizar';
         return;
     }
 
-    const resultadoNotas = resultado.notas;
-    if (!resultadoNotas || !resultadoNotas.ok) {
-        mostrarBanner('error', mensajeError(resultadoNotas || { motivo: 'error_inesperado' }));
-        btnSync.disabled = false;
-        btnSync.textContent = 'Sincronizar';
-        return;
-    }
-
-    // Paso 3: guardar notas + fórmulas, y el Avance Curricular si vino.
+    // Paso 3: guardar notas + fórmulas. El Avance Curricular todavía no
+    // viaja por este flujo (pendiente: migrar /api/avance-curricular al
+    // mismo login por contraseña) — llega vacío hasta entonces.
     try {
         mostrarProgreso('Guardando tus notas...');
         await guardarResultadoSync(userId, resultadoNotas);
 
-        let textoAvance = '';
-        if (resultado.avanceCurricularBase64) {
-            mostrarProgreso('Guardando tu Avance Curricular...');
-            try {
-                const resultadoAvance = await guardarAvanceCurricularDesdeBase64(userId, resultado.avanceCurricularBase64);
-                textoAvance = resultadoAvance.ok
-                    ? ` Tu carrera (${resultadoAvance.facultad} / ${resultadoAvance.carrera}) quedó detectada automáticamente.`
-                    : ` (No se pudo procesar tu Avance Curricular: ${resultadoAvance.detalle || resultadoAvance.motivo}.)`;
-            } catch (errAvance) {
-                textoAvance = ' (No se pudo procesar tu Avance Curricular, intenta sincronizar de nuevo más tarde.)';
-                console.error('Error procesando Avance Curricular:', errAvance);
-            }
-        } else if (resultado.avanceCurricularError) {
-            textoAvance = ' (No se pudo descargar tu Avance Curricular esta vez.)';
-        }
+        const textoAvance = '';
 
         ocultarProgreso();
 

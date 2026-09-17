@@ -464,6 +464,7 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                 # que Angular pinte la tabla. Esta sola llamada trae de una:
                 # evaluaciones, fórmulas Y promedios ya calculados por Intralú.
                 cursos_lista = []
+                errores_curso = []
                 for c_info in cursos_temp:
                     with _jobs_lock:
                         if _jobs[job_id].get("cancelado"):
@@ -496,11 +497,22 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                         )
                         if resp.ok:
                             datos_curso = resp.json()
-                    except Exception:
+                        else:
+                            errores_curso.append({
+                                "codigo": c_info["cod_curso"],
+                                "seccion": c_info["seccion"],
+                                "motivo": f"HTTP {resp.status} al pedir notas",
+                            })
+                    except Exception as e:
                         logger.info(
                             "Job %s:   %s (%s) -> error de red pidiendo notas",
                             job_id, c_info["cod_curso"], periodo,
                         )
+                        errores_curso.append({
+                            "codigo": c_info["cod_curso"],
+                            "seccion": c_info["seccion"],
+                            "motivo": str(e),
+                        })
 
                     if datos_curso:
                         # Diagnóstico TEMPORAL: confirmar en los logs de Render
@@ -513,21 +525,29 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                             job_id, c_info["cod_curso"], periodo, list(datos_curso.keys()),
                         )
 
+                        # Crudas, sin re-etiquetar: mismo esquema que ya
+                        # mandaba el bookmarklet (camnot/descripcion/nota/
+                        # fecha_registro_acta). simplificar_etiqueta() daba
+                        # PC1/Lab1/Monografia1 — nomenclatura del catálogo
+                        # viejo de producción (cursos_db_2018.js), que no es
+                        # la que necesita formula-mapper.js aquí: ese archivo
+                        # ya sabe construir las variables N1/N2/EP/EF/ES que
+                        # formula-engine.js necesita, a partir de camnot +
+                        # descripcion tal cual vienen de Intralú — no hay que
+                        # reinventar esa clasificación en el backend.
                         for ev in datos_curso.get("data", []):
-                            nom_e = (ev.get("descripcion") or "").strip()
-                            etiqueta = simplificar_etiqueta(nom_e) if nom_e else None
-                            if etiqueta:
-                                try:
-                                    val_n = float(ev.get("nota"))
-                                except (TypeError, ValueError):
-                                    val_n = None
-                                evaluaciones.append(
-                                    {
-                                        "etiqueta": etiqueta,
-                                        "n_intralu": extraer_n_intralu(nom_e),
-                                        "nota": val_n,
-                                    }
-                                )
+                            try:
+                                val_n = float(ev.get("nota"))
+                            except (TypeError, ValueError):
+                                val_n = None
+                            evaluaciones.append(
+                                {
+                                    "camnot": ev.get("camnot"),
+                                    "descripcion": (ev.get("descripcion") or "").strip() or None,
+                                    "nota": val_n,
+                                    "fecha_registro_acta": ev.get("fecha_registro_acta"),
+                                }
+                            )
 
                         formulas = datos_curso.get("formulas") or {}
                         formula_practicas = formulas.get("practicas")
@@ -573,6 +593,7 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                     data_por_periodo[periodo] = {
                         "etiqueta_periodo": etiquetar_periodo(periodo),
                         "cursos": cursos_lista,
+                        "errores": errores_curso,
                     }
 
             with _jobs_lock:
