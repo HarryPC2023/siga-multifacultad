@@ -18,12 +18,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 
 const CLAVE_SESSION = 'siga_multifacultad_seleccion';
 
-// ⚠️ Confirmar con Harry el subdominio real asignado en Render al
-// servicio "siga-multifacultad" (se asume el mismo patrón que
-// siga-conexion-intralu.onrender.com, usado en horarios-index.html).
-const BACKEND_SYNC_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    ? 'http://localhost:8000/api/sync-intralu'
-    : 'https://siga-multifacultad.onrender.com/api/sync-intralu';
+// URL confirmada en vivo con Harry — servicio Render "siga-multifacultad".
+const BACKEND_BASE_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    ? 'http://localhost:8000'
+    : 'https://siga-multifacultad.onrender.com';
+const BACKEND_SYNC_URL = `${BACKEND_BASE_URL}/api/sync-intralu`;
 
 // Cada cuántos ms se pregunta al backend si ya terminó, y cuánto se
 // espera como máximo antes de rendirse (Render free tier + Playwright
@@ -32,6 +31,7 @@ const INTERVALO_POLLING_MS = 3000;
 const TIMEOUT_POLLING_MS = 240000;
 
 let facultadElegida, carreraElegida;
+let hayCredencialGuardada = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
     // 1. Recupera la elección de facultad/carrera hecha en index.html.
@@ -242,11 +242,59 @@ function prepararPeriodosSync(periodoIngreso) {
     });
 }
 
-function mostrarBloqueSync(userId, periodoIngreso) {
+async function mostrarBloqueSync(userId, periodoIngreso) {
     document.getElementById('bloqueSync').classList.add('visible');
     prepararPeriodosSync(periodoIngreso);
     document.getElementById('formSync').addEventListener('submit', (e) => manejarSync(e, userId));
     document.getElementById('btnCancelarSync').addEventListener('click', cancelarSyncEnCurso);
+    document.getElementById('btnOlvidarCredencial').addEventListener('click', () => olvidarCredencial(userId));
+
+    hayCredencialGuardada = await verificarCredencialGuardada(userId);
+    aplicarEstadoCredencial();
+}
+
+/* Refleja hayCredencialGuardada en el formulario: si ya hay una
+   contraseña guardada, el campo deja de ser obligatorio y se explica
+   que puede dejarse vacío. */
+function aplicarEstadoCredencial() {
+    const passwordInput = document.getElementById('syncPassword');
+    const aviso = document.getElementById('avisoCredencialGuardada');
+    passwordInput.required = !hayCredencialGuardada;
+    passwordInput.placeholder = hayCredencialGuardada
+        ? 'Déjalo vacío para usar tu contraseña guardada'
+        : 'Contraseña de INTRALU';
+    aviso.style.display = hayCredencialGuardada ? 'block' : 'none';
+}
+
+/* Le pregunta al backend si este alumno ya tiene una contraseña
+   guardada — nunca trae la contraseña en sí, solo un true/false. Si
+   la consulta falla (backend dormido, red, etc.), asumimos que no hay
+   guardada y simplemente se pide como siempre: no es un error grave. */
+async function verificarCredencialGuardada(userId) {
+    try {
+        const resp = await fetch(`${BACKEND_BASE_URL}/api/tiene-credencial/${userId}`);
+        if (!resp.ok) return false;
+        const data = await resp.json();
+        return !!data.tiene;
+    } catch {
+        return false;
+    }
+}
+
+/* El alumno pidió que SIGA olvide su contraseña guardada. */
+async function olvidarCredencial(userId) {
+    const confirmado = window.confirm('¿Seguro que quieres que SIGA olvide tu contraseña guardada? La próxima vez que sincronices tendrás que escribirla de nuevo.');
+    if (!confirmado) return;
+
+    try {
+        await fetch(`${BACKEND_BASE_URL}/api/credencial/${userId}`, { method: 'DELETE' });
+    } catch {
+        // Best-effort: si falla, el peor caso es que siga guardada y
+        // el alumno lo intente de nuevo — no rompemos el flujo por esto.
+    }
+    hayCredencialGuardada = false;
+    aplicarEstadoCredencial();
+    mostrarBanner('exito', 'Listo, ya no tenemos tu contraseña guardada.');
 }
 
 /* Espera a que pasen `ms` milisegundos, sin bloquear el hilo — usado
@@ -260,13 +308,15 @@ function esperar(ms) {
    (credenciales incorrectas, servidor ocupado, etc.). Nunca lanza: 
    siempre resuelve con { ok, motivo?, detalle?, ...datos }, para que
    manejarSync() decida qué mostrar sin try/catch anidados. */
-async function sincronizarConBackend(codigo, password, periodo) {
+async function sincronizarConBackend(codigo, password, periodo, userId, recordar) {
     let jobId;
     try {
+        const body = { codigo, periodo, user_id: userId, recordar };
+        if (password) body.password = password; // vacío = usar la guardada
         const respInicio = await fetch(BACKEND_SYNC_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ codigo, password, periodo }),
+            body: JSON.stringify(body),
         });
         const dataInicio = await respInicio.json();
         if (!respInicio.ok) {
@@ -461,13 +511,18 @@ async function manejarSync(e, userId) {
     const btnSync = document.getElementById('btnSync');
     const btnCancelar = document.getElementById('btnCancelarSync');
 
-    // Paso 1: código, contraseña y periodo.
+    // Paso 1: código, contraseña (opcional si ya hay una guardada) y periodo.
     const codigo = document.getElementById('syncCodigo').value.trim().toUpperCase();
     const password = document.getElementById('syncPassword').value;
     const periodoElegido = document.getElementById('syncPeriodoValor').value;
+    const recordar = document.getElementById('syncRecordar').checked;
 
-    if (!codigo || !password) {
-        mostrarBanner('error', 'Ingresa tu código y tu contraseña de INTRALU.');
+    if (!codigo) {
+        mostrarBanner('error', 'Ingresa tu código de estudiante.');
+        return;
+    }
+    if (!password && !hayCredencialGuardada) {
+        mostrarBanner('error', 'Ingresa tu contraseña de INTRALU.');
         return;
     }
     if (!periodoElegido) {
@@ -475,17 +530,28 @@ async function manejarSync(e, userId) {
         return;
     }
 
-    // Paso 2: mandar credenciales al backend (una sola vez, nunca se
-    // guardan) y esperar a que termine, con polling.
+    // Paso 2: mandar credenciales al backend (si escribió una nueva —
+    // si no, el backend usa la guardada) y esperar a que termine, con
+    // polling. La contraseña nunca se guarda en SIGA salvo que el
+    // alumno haya marcado "Recordar mi contraseña".
     btnSync.disabled = true;
     btnSync.textContent = 'Conectando...';
     btnCancelar.style.display = 'block';
     mostrarProgreso('Iniciando sesión en INTRALU...');
 
-    const resultadoNotas = await sincronizarConBackend(codigo, password, periodoElegido);
+    const resultadoNotas = await sincronizarConBackend(codigo, password, periodoElegido, userId, recordar);
     document.getElementById('syncPassword').value = '';
     ocultarProgreso();
     btnCancelar.style.display = 'none';
+
+    // Si esta sync guardó una contraseña nueva con éxito, el formulario
+    // ya puede tratarla como "hay credencial guardada" sin esperar a
+    // que la página se recargue.
+    if (resultadoNotas.ok && recordar) {
+        hayCredencialGuardada = true;
+        aplicarEstadoCredencial();
+        document.getElementById('syncRecordar').checked = false;
+    }
 
     if (syncCancelada) return; // ya canceló y reseteó la UI, ignoramos esta respuesta tardía
 

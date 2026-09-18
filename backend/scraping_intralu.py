@@ -1,13 +1,17 @@
 import io
 import logging
+import os
 import random
 import re
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
+from typing import Optional
 from urllib.parse import unquote
 
 import requests
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -42,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=ORIGENES_PERMITIDOS,
     allow_credentials=False,
-    allow_methods=["POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
@@ -84,9 +88,17 @@ class LoginIntraluRequest(BaseModel):
     sigilosa (stealth) que sí logra pasar el reCAPTCHA — confirmado 20/20
     en pruebas. Reemplaza a LoginPorCookieRequest para /api/sync-intralu;
     LoginPorCookieRequest se mantiene solo por ahora para
-    /api/avance-curricular, que aún no se ha migrado."""
+    /api/avance-curricular, que aún no se ha migrado.
+
+    `password` ahora es opcional: si no viene, se usa la contraseña
+    cifrada guardada para `user_id` (si existe) en vez de pedirla de
+    nuevo — ver `credenciales_intralu`. `recordar` controla si, tras un
+    login exitoso con una contraseña nueva, esa contraseña se guarda
+    cifrada para la próxima vez (opt-in, por defecto no se guarda)."""
     codigo: str = Field(..., examples=["20231059E"], description="Tu código de estudiante UNI (el mismo de INTRALU).")
-    password: str = Field(..., examples=["tu_contraseña_de_intralu"], description="Tu contraseña de INTRALU. Nunca se guarda.")
+    password: Optional[str] = Field(None, examples=["tu_contraseña_de_intralu"], description="Tu contraseña de INTRALU. Si no se manda, se intenta usar la guardada para user_id.")
+    user_id: str = Field(..., description="UUID del alumno en Supabase (auth.users.id) — identifica de quién es la contraseña guardada, si la hay.")
+    recordar: bool = Field(False, description="Si es true y el login es exitoso con una contraseña nueva, la guarda cifrada para no volver a pedirla.")
     periodo: str = Field(
         ...,
         examples=["20262"],
@@ -105,6 +117,104 @@ class LoginRequest(BaseModel):
     tiene reCAPTCHA."""
     codigo: str = Field(..., examples=["20231059E"], description="Tu código de estudiante UNI.")
     password: str = Field(..., examples=["tu_contraseña"], description="Tu contraseña. Nunca se guarda.")
+
+
+# ================================================================
+# CONTRASEÑA GUARDADA (opt-in, cifrada) — tabla credenciales_intralu
+# ================================================================
+# Se accede a Supabase por su API REST directa (PostgREST) con la
+# service role key, en vez de agregar el paquete supabase-py: es una
+# sola tabla con 3 operaciones simples (leer/upsert/borrar una fila
+# por user_id), y `requests` ya es una dependencia del proyecto.
+# La service role key vive SOLO en esta variable de entorno de Render
+# — nunca en Supabase, nunca en el frontend.
+
+def _fernet():
+    clave = os.environ.get("CRYPTO_KEY_CREDENCIALES")
+    if not clave:
+        raise HTTPException(status_code=500, detail="El servidor no tiene configurada la clave de cifrado (CRYPTO_KEY_CREDENCIALES).")
+    try:
+        return Fernet(clave.encode())
+    except Exception:
+        raise HTTPException(status_code=500, detail="La clave de cifrado configurada en el servidor no es válida.")
+
+
+def _cifrar_password(password):
+    return _fernet().encrypt(password.encode()).decode()
+
+
+def _descifrar_password(password_cifrada):
+    try:
+        return _fernet().decrypt(password_cifrada.encode()).decode()
+    except InvalidToken:
+        # Pasa si la clave de cifrado cambió después de guardar esta
+        # contraseña (ej. se regeneró CRYPTO_KEY_CREDENCIALES) — no hay
+        # forma de recuperarla, hay que pedirla de nuevo.
+        raise HTTPException(status_code=409, detail="Tu contraseña guardada ya no se puede leer. Ingrésala de nuevo.")
+
+
+def _supabase_config():
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        raise HTTPException(status_code=500, detail="El servidor no tiene configurado el acceso a Supabase (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).")
+    return url.rstrip("/"), key
+
+
+def _supabase_headers(key, extra=None):
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def _leer_credencial_cifrada(user_id):
+    """Devuelve la contraseña cifrada guardada para este alumno, o None
+    si nunca guardó una (o la borró)."""
+    url, key = _supabase_config()
+    resp = requests.get(
+        f"{url}/rest/v1/credenciales_intralu",
+        headers=_supabase_headers(key),
+        params={"user_id": f"eq.{user_id}", "select": "password_cifrada"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    filas = resp.json()
+    return filas[0]["password_cifrada"] if filas else None
+
+
+def _guardar_credencial(user_id, password):
+    """Cifra y guarda (o reemplaza) la contraseña de este alumno. No es
+    crítico si falla — quien llama a esto lo hace best-effort, sin
+    abortar una sincronización que ya salió bien."""
+    url, key = _supabase_config()
+    payload = {
+        "user_id": user_id,
+        "password_cifrada": _cifrar_password(password),
+        "actualizado_en": datetime.now(timezone.utc).isoformat(),
+    }
+    resp = requests.post(
+        f"{url}/rest/v1/credenciales_intralu?on_conflict=user_id",
+        headers=_supabase_headers(key, {"Prefer": "resolution=merge-duplicates"}),
+        json=payload,
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+
+def _borrar_credencial(user_id):
+    url, key = _supabase_config()
+    resp = requests.delete(
+        f"{url}/rest/v1/credenciales_intralu",
+        headers=_supabase_headers(key),
+        params={"user_id": f"eq.{user_id}"},
+        timeout=10,
+    )
+    resp.raise_for_status()
 
 
 def normalizar_periodo(periodo):
@@ -356,7 +466,7 @@ class _SyncCancelada(Exception):
     pass
 
 
-def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
+def _ejecutar_sync(job_id, codigo, password, periodo_especifico, user_id, recordar):
     """Corre en un hilo aparte (no bloquea ningún request HTTP). Guarda
     el progreso y el resultado final en _jobs[job_id] para que el
     frontend los recoja haciendo polling contra GET /api/sync-intralu/{job_id}."""
@@ -398,6 +508,17 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico):
                     _jobs[job_id]["detail"] = e.detail
                 logger.info("Job %s: ❌ LOGIN FALLIDO tras %.1fs", job_id, time.time() - inicio)
                 return
+
+            # El login ya funcionó — recién aquí, no antes, vale la pena
+            # guardar la contraseña (si el alumno lo pidió). Si esto
+            # falla, no se aborta la sincronización: ya tiene una sesión
+            # válida y sus notas importan más que este guardado opcional.
+            if recordar and user_id:
+                try:
+                    _guardar_credencial(user_id, password)
+                    logger.info("Job %s: contraseña guardada cifrada para %s", job_id, user_id)
+                except Exception:
+                    logger.exception("Job %s: no se pudo guardar la contraseña cifrada (no crítico, sync continúa)", job_id)
 
             # Token CSRF para las peticiones POST directas (cursos/notas):
             # Laravel exige el valor de la cookie XSRF-TOKEN decodificado
@@ -632,6 +753,17 @@ def iniciar_sync(credentials: LoginIntraluRequest):
     scraping. La sincronización real corre en un hilo aparte."""
     _limpiar_jobs_viejos()
 
+    password = credentials.password
+    if not password:
+        # No mandó una contraseña nueva: solo puede ser porque el
+        # frontend ya sabía (por GET /api/tiene-credencial) que hay una
+        # guardada. Si por algún motivo no la hay, error claro en vez
+        # de dejar que Playwright intente loguear con contraseña vacía.
+        cifrada = _leer_credencial_cifrada(credentials.user_id)
+        if not cifrada:
+            raise HTTPException(status_code=400, detail="No tienes una contraseña guardada. Ingrésala para sincronizar.")
+        password = _descifrar_password(cifrada)
+
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {
@@ -643,12 +775,28 @@ def iniciar_sync(credentials: LoginIntraluRequest):
 
     hilo = threading.Thread(
         target=_ejecutar_sync,
-        args=(job_id, credentials.codigo, credentials.password, credentials.periodo),
+        args=(job_id, credentials.codigo, password, credentials.periodo, credentials.user_id, credentials.recordar),
         daemon=True,
     )
     hilo.start()
 
     return {"job_id": job_id}
+
+
+@app.get("/api/tiene-credencial/{user_id}")
+def tiene_credencial(user_id: str):
+    """El frontend llama esto al cargar la pantalla de sync, para saber
+    si puede saltarse el campo de contraseña. Nunca devuelve la
+    contraseña en sí, solo si existe una guardada."""
+    return {"tiene": _leer_credencial_cifrada(user_id) is not None}
+
+
+@app.delete("/api/credencial/{user_id}")
+def borrar_credencial(user_id: str):
+    """El alumno pidió 'Olvidar mi contraseña guardada' desde el
+    frontend — borra la fila sin dejar rastro cifrado tampoco."""
+    _borrar_credencial(user_id)
+    return {"status": "borrada"}
 
 
 @app.post("/api/sync-intralu/{job_id}/cancelar")
