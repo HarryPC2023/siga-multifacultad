@@ -252,6 +252,11 @@
             </div>
 
             <form class="form-login" id="formSync" autocomplete="off">
+                <div style="position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none;"
+                    aria-hidden="true">
+                    <input type="text" name="usuario_senuelo" autocomplete="username" tabindex="-1">
+                    <input type="password" name="password_senuelo" autocomplete="current-password" tabindex="-1">
+                </div>
                 <input type="text" id="syncCodigo" name="codigo" placeholder="Código de estudiante (ej. 20231059E)"
                     autocomplete="off" required style="text-transform:uppercase;">
                 <div class="campo-contrasena">
