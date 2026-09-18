@@ -59,11 +59,11 @@ _semaforo_sync = threading.Semaphore(MAX_SYNCS_SIMULTANEOS)
 
 
 class LoginPorCookieRequest(BaseModel):
-    """INTRALU exige reCAPTCHA en su login desde mediados de 2026, así que ya
-    no se automatiza código+contraseña — en vez de eso, el 'SIGA Conector'
-    (extensión de Chrome) le presta al backend la sesión que el alumno ya
-    abrió manualmente (resolviendo el reCAPTCHA él mismo). Mismo esquema que
-    ya usa la producción real de SIGA."""
+    """(Legado, sin uso en este sandbox.) Modelo del antiguo login por cookie:
+    cuando INTRALU empezó a exigir reCAPTCHA, la extensión 'SIGA Conector'
+    le prestaba al backend la sesión que el alumno abría a mano. Hoy
+    /api/sync-intralu usa LoginIntraluRequest (código+contraseña con
+    stealth) y ningún endpoint de este archivo usa ya este modelo."""
     session_cookie: str = Field(..., description="Cookie 'intranet_alumno_session' de INTRALU, tomada por el conector.")
     xsrf_token: str = Field(..., description="Cookie 'XSRF-TOKEN' de INTRALU, tomada por el conector.")
     periodo: str = Field(
@@ -81,9 +81,9 @@ class LoginPorCookieRequest(BaseModel):
 class LoginIntraluRequest(BaseModel):
     """Login NUEVO de INTRALU: código+contraseña con automatización
     sigilosa (stealth) que sí logra pasar el reCAPTCHA — confirmado 20/20
-    en pruebas. Reemplaza a LoginPorCookieRequest para /api/sync-intralu;
-    LoginPorCookieRequest se mantiene solo por ahora para
-    /api/avance-curricular, que aún no se ha migrado.
+    en pruebas. Reemplazó por completo al login por cookie de la extensión
+    (LoginPorCookieRequest); el Avance Curricular ya se trae con este mismo
+    login, sin un segundo reCAPTCHA.
 
     `password` ahora es opcional: si no viene, se usa la contraseña
     cifrada guardada para `user_id` (si existe) en vez de pedirla de

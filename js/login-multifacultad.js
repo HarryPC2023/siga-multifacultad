@@ -1,7 +1,6 @@
 // js/login-multifacultad.js — Pantalla de sync de siga-multifacultad.
-// Flujo por CÓDIGO+CONTRASEÑA (reemplaza al bookmarklet, que a su vez
-// había reemplazado a la extensión SIGA Conector): el alumno escribe su
-// código y contraseña de INTRALU aquí mismo; SIGA los manda una sola vez
+// Flujo por CÓDIGO+CONTRASEÑA, sin extensión ni bookmarklet: el alumno
+// escribe su código y contraseña de INTRALU aquí mismo; SIGA los manda una sola vez
 // al backend propio (scraping_intralu.py en Render), que hace login con
 // Playwright + stealth (pasa el reCAPTCHA) y trae notas+fórmulas por HTTP
 // directo. El backend responde al instante con un job_id y el trabajo
@@ -460,8 +459,7 @@ async function guardarResultadoSync(userId, resultado) {
 }
 
 /* Extrae el texto del PDF (pdf.js) y lo pasa por el parser + guardado
-   ya validados — mismo patrón que usaba avance-curricular-debug.js,
-   ahora conectado al flujo real en vez de a un botón de prueba suelto. */
+   ya validados, dentro del flujo real de sincronización. */
 function base64AArrayBuffer(base64) {
     const binario = atob(base64);
     const bytes = new Uint8Array(binario.length);
