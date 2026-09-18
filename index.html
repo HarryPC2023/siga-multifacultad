@@ -25,9 +25,17 @@
         }
 
         .contenedor-principal {
+            box-sizing: border-box;
+            width: calc(100% - 32px);
             max-width: 460px;
-            margin: 0 auto;
-            padding: 28px 20px 60px;
+            margin: 32px auto 40px;
+            padding: 24px 22px 28px;
+            background: #fff;
+            border: 1.5px solid rgba(102, 0, 204, 0.30);
+            border: 1.5px solid color-mix(in srgb, var(--brand-morado) 30%, transparent);
+            border-radius: 20px;
+            box-shadow: 0 12px 32px rgba(102, 0, 204, 0.16);
+            box-shadow: 0 12px 32px color-mix(in srgb, var(--brand-morado) 16%, transparent);
         }
 
         .encabezado-sandbox__marca {
