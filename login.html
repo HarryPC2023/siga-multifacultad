@@ -4,10 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIGA Multifacultad - Conecta tu cuenta</title>
+    <title>SIGA Multifacultad - Sincroniza tus notas</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&display=swap"
+    <link
+        href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&family=Poppins:wght@400;500&display=swap"
         rel="stylesheet">
 
     <link rel="stylesheet" href="css/variables.css">
@@ -43,50 +44,36 @@
             margin: 0 0 6px;
         }
 
-        /* Tarjeta que recuerda qué facultad/carrera se eligió en index.html */
-        .tarjeta-eleccion {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--brand-morado-tinte);
-            border: 1px solid var(--brand-morado);
-            border-radius: 12px;
-            padding: 10px 14px;
-            margin: 18px 0 24px;
-            font-size: 13px;
+        /* Contraste a propósito: los placeholders van en Poppins, el resto
+           de la interfaz sigue en Orbitron — así se distinguen a simple
+           vista del texto real ya escrito. */
+        .form-login input::placeholder {
+            font-family: 'Poppins', sans-serif;
+            font-weight: 400;
         }
 
-        .tarjeta-eleccion__icono {
-            width: 30px;
-            height: 30px;
-            flex-shrink: 0;
-            object-fit: contain;
-        }
-
-        .tarjeta-eleccion__texto {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .tarjeta-eleccion__sigla {
-            font-weight: 600;
-            color: var(--brand-morado);
-            margin: 0;
-        }
-
-        .tarjeta-eleccion__carrera {
-            margin: 0;
+        .aviso-sin-intralu {
+            text-align: center;
+            font-size: 11px;
             color: var(--ink-soft);
+            margin: 16px 0 0;
         }
 
-        .tarjeta-eleccion__cambiar {
+        /* Botón Sincronizar: angosto y centrado, no de ancho completo —
+           se ve más preciso que un CTA que ocupa todo el formulario. */
+        .btn-sincronizar {
+            display: block;
+            align-self: center;
+            margin: 8px auto 0;
+            padding: 14px 44px;
             border: none;
-            background: none;
-            color: var(--brand-morado);
-            font-size: 12px;
+            border-radius: 14px;
+            background: var(--brand-morado);
+            color: #fff;
+            font-family: var(--font-body);
             font-weight: 600;
+            font-size: 14px;
             cursor: pointer;
-            flex-shrink: 0;
         }
 
         section.bloque {
@@ -189,6 +176,40 @@
             font-size: 20px;
             margin: 0 auto 10px;
         }
+
+        /* Insignia de facultad/carrera AUTODETECTADA desde el Avance
+           Curricular — reemplaza a la vieja tarjeta de elección manual.
+           El color de borde/ícono lo pone JS según la facultad real
+           (ver pintarInsigniaFacultad en login-multifacultad.js). */
+        .insignia-facultad {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background: #fff;
+            border: 2px solid #999;
+            border-radius: 14px;
+            padding: 10px 18px;
+            margin: 8px 0 16px;
+            text-align: left;
+        }
+
+        .insignia-facultad__icono {
+            width: 46px;
+            height: 46px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+
+        .insignia-facultad__sigla {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .insignia-facultad__carrera {
+            font-size: 13px;
+            color: var(--ink);
+        }
     </style>
 </head>
 
@@ -196,18 +217,8 @@
     <div class="contenedor-principal">
         <header>
             <p class="encabezado-sandbox__marca">SIGA</p>
-            <h1 class="encabezado-sandbox__titulo">Conecta tu cuenta</h1>
+            <h1 class="encabezado-sandbox__titulo">Sincroniza tus notas de INTRALU</h1>
         </header>
-
-        <div class="tarjeta-eleccion" id="tarjetaEleccion">
-            <img class="tarjeta-eleccion__icono" id="eleccionIcono" src="" alt="">
-            <div class="tarjeta-eleccion__texto">
-                <p class="tarjeta-eleccion__sigla" id="eleccionSigla"></p>
-                <p class="tarjeta-eleccion__carrera" id="eleccionCarrera"></p>
-            </div>
-            <button type="button" class="tarjeta-eleccion__cambiar"
-                onclick="window.location.href='index.html'">Cambiar</button>
-        </div>
 
         <a href="notas.html"
             style="display:block; text-align:center; font-size:13px; color:var(--brand-morado); font-weight:600; text-decoration:none; margin-bottom:18px;">Ver
@@ -241,10 +252,8 @@
                 style="border:none; background:var(--brand-morado); color:#fff; width:100%;">Continuar</button>
         </section>
 
-        <!-- ============ Sync con Intralú (vía SIGA Conector) ============ -->
+        <!-- ============ Sync con Intralú (código + contraseña) ============ -->
         <section class="bloque" id="bloqueSync">
-            <h2 class="titulo-bloque">Ahora, sincroniza tus cursos</h2>
-
             <div class="banner-estado" id="bannerSync"></div>
             <div class="progreso-sync" id="progresoSync">
                 <span class="progreso-sync__spinner"></span>
@@ -257,10 +266,10 @@
                     <input type="text" name="usuario_senuelo" autocomplete="username" tabindex="-1">
                     <input type="password" name="password_senuelo" autocomplete="current-password" tabindex="-1">
                 </div>
-                <input type="text" id="syncCodigo" name="codigo" placeholder="Código de estudiante (ej. 20261234X)"
-                    autocomplete="off" required style="text-transform:uppercase;">
+                <input type="text" id="syncCodigo" name="codigo" placeholder="20261234X" autocomplete="off" required
+                    style="text-transform:uppercase;">
                 <div class="campo-contrasena">
-                    <input type="password" id="syncPassword" name="password" placeholder="Contraseña de INTRALU"
+                    <input type="password" id="syncPassword" name="password" placeholder="••••••••"
                         autocomplete="current-password">
                     <button type="button" class="btn-ojo" id="btnOjoSync" aria-label="Mostrar contraseña">👁</button>
                 </div>
@@ -286,17 +295,24 @@
                 <ul class="select-custom-lista" id="syncPeriodoLista" role="listbox" hidden></ul>
                 <input type="hidden" id="syncPeriodoValor">
 
-                <div style="display:flex; gap:10px;">
-                    <button type="submit" class="btn-google" id="btnSync"
-                        style="flex:1; border:none; background:var(--brand-morado); color:#fff;">Sincronizar</button>
+                <div style="display:flex; gap:10px; align-items:center; justify-content:center;">
+                    <button type="submit" class="btn-sincronizar" id="btnSync">Sincronizar</button>
                     <button type="button" id="btnCancelarSync"
-                        style="display:none; flex:1; border:1px solid var(--brand-morado); background:#fff; color:var(--brand-morado); border-radius:10px; font-weight:600; cursor:pointer;">Cancelar</button>
+                        style="display:none; padding:14px 28px; border:1px solid var(--brand-morado); background:#fff; color:var(--brand-morado); border-radius:14px; font-weight:600; cursor:pointer;">Cancelar</button>
                 </div>
             </form>
+
+            <p class="aviso-sin-intralu">No necesitas activar ni abrir INTRALU para cargar tus notas.</p>
 
             <div class="resumen-final" id="resumenFinal">
                 <div class="resumen-final__check">✓</div>
                 <p style="margin:0 0 4px; font-weight:600;">Sincronización lista</p>
+
+                <!-- Se llena con JS (pintarInsigniaFacultad) apenas se conoce
+                     la facultad/carrera real, autodetectada del Avance
+                     Curricular — nunca elegida a mano. -->
+                <div id="insigniaFacultad" style="display:none;"></div>
+
                 <p style="margin:0 0 14px; font-size:13px; color:var(--ink-soft);" id="resumenFinalTexto"></p>
                 <a href="notas.html" class="btn-google"
                     style="display:inline-block; text-decoration:none; border:none; background:var(--brand-morado); color:#fff; padding:10px 24px; border-radius:10px; font-weight:600;">Ver

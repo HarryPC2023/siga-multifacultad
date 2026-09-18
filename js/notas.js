@@ -13,6 +13,7 @@
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
+import { FACULTADES } from './facultades-datos.js';
 
 const UMBRAL_APROBACION = 10;
 
@@ -27,6 +28,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!sesion) { window.location.href = 'index.html'; return; }
     usuarioActual = sesion.user;
 
+    await pintarIdentidad(sesion);
+    inicializarAnalisisAcademico();
+
     await cargarDatos(usuarioActual.id);
     inicializarSelectorPeriodo();
     inicializarModalEliminarPeriodo();
@@ -38,6 +42,100 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     seleccionarPeriodo(periodos[0]);
 });
+
+/* ============================================================
+   PANEL DE IDENTIDAD — nombre/foto vienen de la sesión (Google, si
+   algún día este sandbox deja de ser anónimo); código/facultad/
+   carrera/periodo vienen de perfiles_usuario, nunca elegidos a mano
+   (facultad/carrera los guarda login-multifacultad.js apenas se
+   autodetectan del Avance Curricular).
+   ============================================================ */
+async function pintarIdentidad(sesion) {
+    const meta = sesion.user?.user_metadata || {};
+    const { data: perfil } = await supabase
+        .from('perfiles_usuario')
+        .select('codigo_estudiante, facultad, carrera, periodo_actual')
+        .eq('user_id', sesion.user.id)
+        .maybeSingle();
+
+    // Sesión anónima (como es hoy este sandbox): sin nombre/foto de
+    // Google todavía — se usa el código de estudiante como identidad
+    // visible mientras tanto, nunca un nombre inventado.
+    const nombre = meta.full_name || meta.name || perfil?.codigo_estudiante || 'Alumno';
+    const foto = meta.avatar_url || meta.picture || null;
+
+    const avatar = document.getElementById('identidadAvatar');
+    if (foto) {
+        avatar.innerHTML = `<img src="${foto}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+    } else {
+        avatar.textContent = nombre.trim().charAt(0).toUpperCase();
+    }
+    document.getElementById('identidadNombre').textContent = nombre;
+    document.getElementById('identidadCodigo').textContent = perfil?.codigo_estudiante || '';
+
+    const facultad = FACULTADES.find((f) => f.sigla === perfil?.facultad);
+    if (facultad) {
+        const chip = document.getElementById('chipFacultad');
+        chip.style.display = 'flex';
+        chip.style.borderLeftColor = facultad.color;
+        document.getElementById('chipFacultadIcono').src = facultad.icono;
+        document.getElementById('chipFacultadIcono').alt = `Ícono de ${facultad.sigla}`;
+        document.getElementById('chipFacultadNombre').textContent = `${facultad.sigla} · ${perfil.carrera}`;
+        document.getElementById('chipFacultadPeriodo').textContent = perfil.periodo_actual
+            ? `Periodo ${perfil.periodo_actual}`
+            : '';
+    }
+}
+
+/* ============================================================
+   ANÁLISIS ACADÉMICO — 🚧 EN CAMINO en este sandbox.
+   El motor real de estas 3 herramientas (Meta del curso, Progreso de
+   tu carrera, Ruta del Curso) vive hoy solo en producción SIGA
+   (intranotas.js + progreso-malla.js: calcularPFCompleto(), el grafo
+   de prerrequisitos, etc.) — portarlo es trabajo aparte, todavía no
+   hecho acá. Mientras tanto, cada chip abre un aviso honesto en vez
+   de fingir un cálculo que no existe.
+   ============================================================ */
+const AA_INFO = {
+    meta: {
+        icono: '🎯',
+        titulo: 'Meta del curso',
+        desc: 'Calcula qué nota necesitas en lo que falta de un curso para alcanzar tu meta. Ya funciona en producción SIGA — se está portando a este sandbox.',
+    },
+    progreso: {
+        icono: '🗺️',
+        titulo: 'Progreso de tu carrera',
+        desc: 'El mapa completo de tu malla por ciclos, con qué ya aprobaste y qué se te abre después. Ya funciona en producción SIGA — se está portando a este sandbox.',
+    },
+    ruta: {
+        icono: '🔗',
+        titulo: 'Ruta del Curso',
+        desc: 'Qué necesitas para llevar un curso y qué se te desbloquea al aprobarlo. Ya funciona en producción SIGA — se está portando a este sandbox.',
+    },
+};
+
+function inicializarAnalisisAcademico() {
+    document.querySelectorAll('.chip-herramienta').forEach((chip) => {
+        chip.addEventListener('click', () => abrirAvisoAnalisisAcademico(chip.dataset.aa));
+    });
+    document.getElementById('aaCerrar').addEventListener('click', cerrarAvisoAnalisisAcademico);
+    document.getElementById('aaOverlay').addEventListener('click', (e) => {
+        if (e.target.id === 'aaOverlay') cerrarAvisoAnalisisAcademico();
+    });
+}
+
+function abrirAvisoAnalisisAcademico(id) {
+    const info = AA_INFO[id];
+    if (!info) return;
+    document.getElementById('aaIcono').textContent = info.icono;
+    document.getElementById('aaTitulo').textContent = info.titulo;
+    document.getElementById('aaDesc').textContent = info.desc;
+    document.getElementById('aaOverlay').classList.add('visible');
+}
+
+function cerrarAvisoAnalisisAcademico() {
+    document.getElementById('aaOverlay').classList.remove('visible');
+}
 
 async function cargarDatos(userId) {
     const { data: notas } = await supabase
@@ -269,19 +367,22 @@ function renderizarCursos() {
         const card = document.createElement('div');
         card.className = 'curso-card';
         card.innerHTML = `
-            <div class="curso-card__cabecera" data-toggle="${idx}">
-                <div>
-                    <p class="curso-card__nombre">${curso.nombre_curso || curso.codigo_curso}<span class="badge ${estado.clase}">${estado.texto}</span></p>
-                    <p class="curso-card__meta">${curso.codigo_curso}${creditos ? ` · ${creditos} cr` : ''}</p>
-                </div>
-                <div class="curso-card__promedio">
-                    <p class="curso-card__promedio-etiqueta">Nota Final</p>
-                    <p class="curso-card__promedio-valor">${notaFinal ?? '--'}</p>
-                </div>
+            <div class="curso-card__promedio">
+                <p class="curso-card__promedio-etiqueta">PROMEDIO</p>
+                <p class="curso-card__promedio-valor">${notaFinal ?? '--'}</p>
             </div>
-            <div class="curso-card__cuerpo" id="cuerpo-${idx}"></div>
+            <div class="curso-card__cuerpo-principal">
+                <p class="curso-card__nombre">${curso.nombre_curso || curso.codigo_curso}</p>
+                <div class="curso-card__meta-fila">
+                    <span class="curso-card__codigo">${curso.codigo_curso}</span>
+                    ${creditos ? `<span class="badge badge-creditos">${creditos} créditos</span>` : ''}
+                    <span class="badge ${estado.clase}">${estado.texto}</span>
+                </div>
+                <button type="button" class="btn-ingresar-notas" data-toggle="${idx}">Ingresar notas</button>
+                <div class="curso-card__cuerpo" id="cuerpo-${idx}"></div>
+            </div>
         `;
-        card.querySelector('.curso-card__cabecera').addEventListener('click', () => toggleCurso(idx, curso));
+        card.querySelector('.btn-ingresar-notas').addEventListener('click', () => toggleCurso(idx, curso));
         contenedor.appendChild(card);
     });
 
@@ -404,9 +505,10 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
         : '';
 
     // Actualiza también la cabecera de la card sin re-renderizar toda la lista
-    const valorHeader = cuerpo.parentElement.querySelector('.curso-card__promedio-valor');
+    const tarjeta = cuerpo.closest('.curso-card');
+    const valorHeader = tarjeta?.querySelector('.curso-card__promedio-valor');
     if (valorHeader) valorHeader.textContent = notaFinal ?? '--';
-    const badge = cuerpo.parentElement.querySelector('.badge');
+    const badge = tarjeta?.querySelector('.curso-card__meta-fila .badge:last-child');
     if (badge) {
         const estado = estadoCurso(notaFinal, periodoActivo);
         badge.textContent = estado.texto;

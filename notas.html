@@ -22,10 +22,206 @@
             color: var(--ink);
         }
 
-        .contenedor-notas {
+        /* ============================================================
+           LAYOUT — un mismo panel de identidad que cambia de orientación
+           según el espacio: apilado arriba en móvil, lateral fijo en
+           escritorio. Diseñado primero para 375-420px y expandido desde
+           ahí, no al revés.
+           ============================================================ */
+        .layout-identidad {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        @media (min-width: 900px) {
+            .layout-identidad {
+                flex-direction: row;
+            }
+        }
+
+        /* ---------- Panel de identidad ---------- */
+        .panel-identidad {
+            flex-shrink: 0;
+            background: linear-gradient(135deg, var(--brand-morado) 0%, var(--brand-azul) 100%);
+            padding: 18px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        @media (min-width: 900px) {
+            .panel-identidad {
+                width: 260px;
+                padding: 30px 22px;
+                gap: 20px;
+            }
+        }
+
+        .identidad-persona {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .identidad-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.25);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 17px;
+            flex-shrink: 0;
+            object-fit: cover;
+        }
+
+        @media (min-width: 900px) {
+            .identidad-avatar {
+                width: 50px;
+                height: 50px;
+                font-size: 19px;
+            }
+        }
+
+        .identidad-nombre {
+            color: #fff;
+            font-weight: 700;
+            font-size: 15px;
+            line-height: 1.2;
+        }
+
+        .identidad-codigo {
+            color: var(--bg-lavanda);
+            font-size: 11px;
+        }
+
+        .chip-facultad {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.14);
+            border-left: 4px solid #fff;
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+
+        .chip-facultad__icono {
+            width: 28px;
+            height: 28px;
+            object-fit: contain;
+            background: #fff;
+            border-radius: 8px;
+            padding: 3px;
+            flex-shrink: 0;
+        }
+
+        @media (min-width: 900px) {
+            .chip-facultad__icono {
+                width: 34px;
+                height: 34px;
+            }
+        }
+
+        .chip-facultad__nombre {
+            color: #fff;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .chip-facultad__periodo {
+            color: var(--bg-lavanda);
+            font-size: 11px;
+        }
+
+        /* ---------- Herramientas de Análisis Académico: visibles desde
+           el inicio, nunca escondidas en un submenú. ---------- */
+        .fila-herramientas {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+        }
+
+        @media (min-width: 900px) {
+            .fila-herramientas {
+                flex-direction: column;
+                overflow: visible;
+            }
+
+            .panel-identidad .separador-panel {
+                height: 1px;
+                background: rgba(255, 255, 255, 0.2);
+                margin: 4px 0;
+            }
+
+            .panel-identidad .marca-pie {
+                margin-top: auto;
+                font-family: var(--font-logo);
+                color: #fff;
+                opacity: .8;
+                font-size: 14px;
+            }
+        }
+
+        .chip-herramienta {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-family: var(--font-body);
+            font-weight: 600;
+            font-size: 12px;
+            cursor: pointer;
+            white-space: nowrap;
+            text-align: left;
+        }
+
+        @media (min-width: 900px) {
+            .chip-herramienta {
+                padding: 12px 14px;
+                font-size: 13px;
+                white-space: normal;
+            }
+        }
+
+        .chip-herramienta--meta {
+            background: var(--bg-cian);
+            color: var(--acento-cian);
+        }
+
+        .chip-herramienta--progreso {
+            background: var(--bg-lavanda);
+            color: var(--acento-lavanda);
+        }
+
+        .chip-herramienta--ruta {
+            background: #EAF5C0;
+            color: #6B7F00;
+        }
+
+        /* ---------- Contenido: "Mis notas" ---------- */
+        .contenido-notas {
+            flex-grow: 1;
+            min-width: 0;
+        }
+
+        .contenido-notas__interior {
             max-width: 640px;
             margin: 0 auto;
-            padding: 24px 18px 60px;
+            padding: 20px 18px 60px;
+        }
+
+        @media (min-width: 900px) {
+            .contenido-notas__interior {
+                max-width: 900px;
+                padding: 32px 40px 60px;
+            }
         }
 
         .encabezado-notas {
@@ -37,8 +233,7 @@
 
         .encabezado-notas__marca {
             font-family: var(--font-logo);
-            font-size: 20px;
-            color: var(--brand-morado);
+            font-size: 18px;
             margin: 0;
         }
 
@@ -80,23 +275,25 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            background: var(--brand-azul-tinte);
-            border-radius: 12px;
-            padding: 14px 18px;
-            margin-bottom: 12px;
+            background: var(--brand-morado-tinte);
+            border-radius: 14px;
+            padding: 16px 18px;
+            margin-bottom: 20px;
+            max-width: 480px;
         }
 
         .card-promedio__etiqueta {
             font-size: 12px;
+            font-weight: 600;
             color: var(--ink-soft);
             letter-spacing: 0.02em;
         }
 
         .card-promedio__valor {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 22px;
+            font-family: var(--font-body);
+            font-size: 24px;
             font-weight: 700;
-            color: var(--brand-azul);
+            color: var(--brand-morado);
         }
 
         .banner-riesgo {
@@ -123,25 +320,80 @@
             color: #7A4600;
         }
 
-        .curso-card {
-            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-            padding: 16px 0;
+        /* ---------- Tarjetas de curso: promedio a la izquierda, créditos
+           y estado con color propio, botón "Ingresar notas" celeste.
+           Mismo lenguaje de color que el panel de identidad. ---------- */
+        #listaCursos {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
 
-        .curso-card__cabecera {
+        @media (min-width: 900px) {
+            #listaCursos {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
+            }
+        }
+
+        .curso-card {
+            border: 1px solid #e8e3da;
+            border-radius: 12px;
+            padding: 14px;
+            background: #fff;
             display: flex;
-            justify-content: space-between;
             gap: 12px;
-            cursor: pointer;
+        }
+
+        .curso-card__promedio {
+            background: #EAF5C0;
+            border-radius: 10px;
+            padding: 8px 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-width: 58px;
+            flex-shrink: 0;
+        }
+
+        .curso-card__promedio-etiqueta {
+            font-size: 8px;
+            color: #6B7F00;
+            font-weight: 700;
+            letter-spacing: .3px;
+            margin: 0;
+        }
+
+        .curso-card__promedio-valor {
+            font-family: var(--font-body);
+            font-weight: 700;
+            font-size: 16px;
+            color: #6B7F00;
+            margin: 0;
+        }
+
+        .curso-card__cuerpo-principal {
+            flex-grow: 1;
+            min-width: 0;
         }
 
         .curso-card__nombre {
-            font-size: 14px;
             font-weight: 600;
-            margin: 0 0 2px;
+            font-size: 13px;
+            margin: 0 0 6px;
         }
 
-        .curso-card__meta {
+        .curso-card__meta-fila {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .curso-card__codigo {
             font-size: 11px;
             color: var(--ink-soft);
         }
@@ -150,10 +402,13 @@
             display: inline-block;
             font-size: 10px;
             font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 20px;
-            margin-left: 6px;
-            vertical-align: middle;
+            padding: 3px 9px;
+            border-radius: 8px;
+        }
+
+        .badge-creditos {
+            background: var(--bg-lavanda);
+            color: var(--acento-lavanda);
         }
 
         .badge-aprobado {
@@ -162,8 +417,8 @@
         }
 
         .badge-riesgo {
-            background: #FDF1E4;
-            color: #A65D00;
+            background: var(--bg-amarillo);
+            color: var(--acento-amarillo);
         }
 
         .badge-critico {
@@ -172,26 +427,20 @@
         }
 
         .badge-pendiente {
-            background: #EFEFEF;
-            color: var(--ink-soft);
+            background: var(--bg-amarillo);
+            color: var(--acento-amarillo);
         }
 
-        .curso-card__promedio {
-            text-align: right;
-            flex-shrink: 0;
-        }
-
-        .curso-card__promedio-etiqueta {
-            font-size: 10px;
-            color: var(--ink-soft);
-            margin: 0;
-        }
-
-        .curso-card__promedio-valor {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 20px;
-            font-weight: 700;
-            margin: 0;
+        .btn-ingresar-notas {
+            background: var(--bg-cian);
+            color: var(--acento-cian);
+            border: none;
+            border-radius: 10px;
+            padding: 8px 16px;
+            font-family: var(--font-body);
+            font-weight: 600;
+            font-size: 11px;
+            cursor: pointer;
         }
 
         .curso-card__cuerpo {
@@ -223,7 +472,7 @@
         }
 
         .componente input {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-body);
             font-size: 14px;
             text-align: center;
             padding: 6px 4px;
@@ -241,7 +490,6 @@
         }
 
         .prom-pc strong {
-            font-family: 'JetBrains Mono', monospace;
             color: var(--ink);
         }
 
@@ -259,7 +507,6 @@
         }
 
         .caja-necesito__valor {
-            font-family: 'JetBrains Mono', monospace;
             font-weight: 700;
         }
 
@@ -277,9 +524,7 @@
         }
 
         /* ============================================================
-           MODAL DE CONFIRMACIÓN — mismo patrón visual que producción
-           (icono + título + mensaje + 2 botones), con los tokens de
-           color del sandbox en vez de las variables viejas de SIGA.
+           MODAL DE CONFIRMACIÓN — mismo patrón visual que producción.
            ============================================================ */
         .modal-overlay {
             display: none;
@@ -361,47 +606,149 @@
         .modal-btn-confirmar:hover {
             background: #9C1E23;
         }
+
+        /* ---------- Panel de Análisis Académico (🚧 en camino en este
+           sandbox — el motor real vive hoy solo en producción SIGA, ver
+           nota en analisisAcademico.js). ---------- */
+        .aa-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            z-index: 400;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .aa-overlay.visible {
+            display: flex;
+        }
+
+        .aa-caja {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 360px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+        }
+
+        .aa-caja__icono {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .aa-caja__titulo {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 1rem;
+            margin: 0 0 8px;
+        }
+
+        .aa-caja__desc {
+            font-size: 0.85rem;
+            color: var(--ink-soft);
+            line-height: 1.6;
+            margin: 0 0 18px;
+        }
+
+        .aa-caja__cerrar {
+            font-family: var(--font-body);
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 10px 24px;
+            border: none;
+            border-radius: 50px;
+            background: var(--brand-morado);
+            color: #fff;
+            cursor: pointer;
+        }
     </style>
 </head>
 
 <body>
-    <div class="contenedor-notas">
-        <div class="encabezado-notas">
-            <p class="encabezado-notas__marca">SIGA · Mis notas</p>
-            <a class="encabezado-notas__volver" href="login.html">← Sincronizar otro periodo</a>
-        </div>
+    <div class="layout-identidad">
 
-        <div class="fila-selector-periodo">
-            <div class="campo-select-custom">
-                <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger" aria-haspopup="listbox"
-                    aria-expanded="false">
-                    <span id="selectorPeriodoTexto">Elige un periodo</span>
-                    <span class="select-custom-chevron" aria-hidden="true">▾</span>
-                </button>
-                <ul class="select-custom-lista" id="selectorPeriodoLista" role="listbox" hidden></ul>
-                <input type="hidden" id="selectorPeriodoValor">
+        <!-- ===== Panel de identidad: horizontal arriba en móvil, lateral
+             fijo en escritorio (ver media query arriba). Se llena con JS
+             (pintarIdentidad en notas.js) desde el perfil real y la
+             sesión — nunca datos elegidos a mano. ===== -->
+        <div class="panel-identidad" id="panelIdentidad">
+            <div class="identidad-persona">
+                <div class="identidad-avatar" id="identidadAvatar">?</div>
+                <div>
+                    <div class="identidad-nombre" id="identidadNombre">Cargando…</div>
+                    <div class="identidad-codigo" id="identidadCodigo"></div>
+                </div>
             </div>
-            <button type="button" class="btn-eliminar-periodo" id="btnEliminarPeriodo"
-                aria-label="Eliminar este periodo">🗑️</button>
+
+            <div class="chip-facultad" id="chipFacultad" style="display:none;">
+                <img class="chip-facultad__icono" id="chipFacultadIcono" src="" alt="">
+                <div>
+                    <div class="chip-facultad__nombre" id="chipFacultadNombre"></div>
+                    <div class="chip-facultad__periodo" id="chipFacultadPeriodo"></div>
+                </div>
+            </div>
+
+            <div class="separador-panel"></div>
+
+            <div class="fila-herramientas">
+                <button type="button" class="chip-herramienta chip-herramienta--meta" data-aa="meta">
+                    🎯 Meta del curso
+                </button>
+                <button type="button" class="chip-herramienta chip-herramienta--progreso" data-aa="progreso">
+                    🗺️ Progreso de tu carrera
+                </button>
+                <button type="button" class="chip-herramienta chip-herramienta--ruta" data-aa="ruta">
+                    🔗 Ruta del curso
+                </button>
+            </div>
+
+            <div class="marca-pie">SIGA</div>
         </div>
 
-        <div class="card-promedio">
-            <span class="card-promedio__etiqueta">PROMEDIO PONDERADO</span>
-            <span class="card-promedio__valor" id="promedioPonderado">--</span>
-        </div>
+        <!-- ===== Contenido: Mis notas ===== -->
+        <div class="contenido-notas">
+            <div class="contenido-notas__interior">
+                <div class="encabezado-notas">
+                    <h1 class="encabezado-notas__marca">Mis notas</h1>
+                    <a class="encabezado-notas__volver" href="login.html">← Sincronizar otro periodo</a>
+                </div>
 
-        <div class="banner-riesgo" id="bannerRiesgo">
-            <p class="banner-riesgo__titulo">⚠ Cursos en riesgo</p>
-            <div id="bannerRiesgoLista"></div>
-        </div>
+                <div class="fila-selector-periodo">
+                    <div class="campo-select-custom">
+                        <button type="button" class="select-custom-trigger" id="selectorPeriodoTrigger"
+                            aria-haspopup="listbox" aria-expanded="false">
+                            <span id="selectorPeriodoTexto">Elige un periodo</span>
+                            <span class="select-custom-chevron" aria-hidden="true">▾</span>
+                        </button>
+                        <ul class="select-custom-lista" id="selectorPeriodoLista" role="listbox" hidden></ul>
+                        <input type="hidden" id="selectorPeriodoValor">
+                    </div>
+                    <button type="button" class="btn-eliminar-periodo" id="btnEliminarPeriodo"
+                        aria-label="Eliminar este periodo">🗑️</button>
+                </div>
 
-        <div id="listaCursos"></div>
-        <div class="estado-vacio" id="estadoVacio" style="display:none;">Aún no sincronizas ningún curso.</div>
+                <div class="card-promedio">
+                    <span class="card-promedio__etiqueta">PROMEDIO PONDERADO</span>
+                    <span class="card-promedio__valor" id="promedioPonderado">--</span>
+                </div>
+
+                <div class="banner-riesgo" id="bannerRiesgo">
+                    <p class="banner-riesgo__titulo">⚠ Cursos en riesgo</p>
+                    <div id="bannerRiesgoLista"></div>
+                </div>
+
+                <div id="listaCursos"></div>
+                <div class="estado-vacio" id="estadoVacio" style="display:none;">Aún no sincronizas ningún curso.
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Modal: eliminar el periodo actualmente seleccionado (todas sus
-         notas en notas_curso para este alumno; formulas_curso NO se toca,
-         es compartida con otros alumnos del mismo curso). -->
+    <!-- Modal: eliminar el periodo actualmente seleccionado. -->
     <div id="modalEliminarPeriodo" class="modal-overlay">
         <div class="modal-caja">
             <div class="modal-icono">🗑️</div>
@@ -414,6 +761,19 @@
                 <button type="button" class="modal-btn modal-btn-confirmar" id="btnConfirmarEliminarPeriodo">Sí,
                     eliminar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Panel de Análisis Académico — hoy muestra un estado honesto de
+         "en camino" para las 3 herramientas: el motor real (Meta del
+         curso, Progreso de tu carrera, Ruta del Curso) vive en
+         producción SIGA y todavía no se portó a este sandbox. -->
+    <div id="aaOverlay" class="aa-overlay">
+        <div class="aa-caja">
+            <div class="aa-caja__icono" id="aaIcono">🚧</div>
+            <h2 class="aa-caja__titulo" id="aaTitulo">En camino</h2>
+            <p class="aa-caja__desc" id="aaDesc"></p>
+            <button type="button" class="aa-caja__cerrar" id="aaCerrar">Entendido</button>
         </div>
     </div>
 

@@ -16,8 +16,6 @@ import * as pdfjsLib from '../vendor-pdfjs/pdf.min.mjs';
 pdfjsLib.GlobalWorkerOptions.workerSrc =
     new URL('../vendor-pdfjs/pdf.worker.min.mjs', import.meta.url).href;
 
-const CLAVE_SESSION = 'siga_multifacultad_seleccion';
-
 // URL confirmada en vivo con Harry — servicio Render "siga-multifacultad".
 const BACKEND_BASE_URL = ['localhost', '127.0.0.1'].includes(window.location.hostname)
     ? 'http://localhost:8000'
@@ -30,27 +28,12 @@ const BACKEND_SYNC_URL = `${BACKEND_BASE_URL}/api/sync-intralu`;
 const INTERVALO_POLLING_MS = 3000;
 const TIMEOUT_POLLING_MS = 240000;
 
-let facultadElegida, carreraElegida;
 let hayCredencialGuardada = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Recupera la elección de facultad/carrera hecha en index.html.
-    const seleccionRaw = sessionStorage.getItem(CLAVE_SESSION);
-    if (!seleccionRaw) {
-        window.location.href = 'index.html';
-        return;
-    }
-    const seleccion = JSON.parse(seleccionRaw);
-    facultadElegida = FACULTADES.find((f) => f.id === seleccion.facultadId);
-    carreraElegida = facultadElegida?.carreras.find((c) => c.id === seleccion.carreraId);
-    if (!facultadElegida || !carreraElegida) {
-        window.location.href = 'index.html';
-        return;
-    }
-    pintarEleccion();
     prepararOjoPassword();
 
-    // 2. Sesión anónima (sandbox de prueba, sin cuenta real).
+    // 1. Sesión anónima (sandbox de prueba, sin cuenta real).
     let user;
     try {
         const sesion = await asegurarSesionAnonima();
@@ -59,8 +42,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         return; // el banner de error ya quedó mostrado dentro de asegurarSesionAnonima()
     }
 
-    // 3. ¿Ya sabemos su periodo de ingreso? (dato informativo del perfil,
-    // no tiene relación con qué periodo se sincroniza ahora).
+    // 2. ¿Ya sabemos su periodo de ingreso? (dato informativo del perfil,
+    // no tiene relación con qué periodo se sincroniza ahora). Facultad y
+    // carrera YA NO se piden ni se guardan acá — se autodetectan del
+    // Avance Curricular apenas termina la primera sincronización (ver
+    // guardarPerfilAcademicoDesdeAvance, más abajo).
     const { data: perfil } = await supabase
         .from('perfiles_usuario')
         .select('periodo_ingreso, codigo_estudiante')
@@ -68,11 +54,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         .maybeSingle();
 
     if (perfil?.periodo_ingreso) {
-        await guardarPerfilBase(user.id);
         mostrarBloqueSync(user.id, perfil.periodo_ingreso);
     } else if (perfil?.codigo_estudiante) {
         const derivado = await derivarYGuardarPeriodoDesdeCodigo(user.id, perfil.codigo_estudiante);
-        await guardarPerfilBase(user.id);
         if (derivado) {
             mostrarBloqueSync(user.id, derivado);
         } else {
@@ -111,19 +95,38 @@ async function asegurarSesionAnonima() {
     return data.session;
 }
 
-async function guardarPerfilBase(userId) {
+/* Guarda facultad/carrera en perfiles_usuario usando el resultado YA
+   calculado por guardarAvanceCurricular() (ver avance-curricular-
+   guardar.js) — nunca una elección manual. Solo se llama cuando ese
+   guardado salió bien (resultadoAvance.ok); si el PDF no calzó con
+   ninguna de las 11 facultades conocidas, no hay nada que guardar acá
+   y el perfil simplemente se queda sin facultad hasta la próxima sync. */
+async function guardarPerfilAcademicoDesdeAvance(userId, resultadoAvance) {
     await supabase.from('perfiles_usuario').upsert({
         user_id: userId,
-        facultad: facultadElegida.sigla,
-        carrera: carreraElegida.nombre,
+        facultad: resultadoAvance.facultad,
+        carrera: resultadoAvance.carrera,
     }, { onConflict: 'user_id' });
 }
 
-function pintarEleccion() {
-    document.getElementById('eleccionIcono').src = facultadElegida.icono;
-    document.getElementById('eleccionIcono').alt = `Ícono de ${facultadElegida.sigla}`;
-    document.getElementById('eleccionSigla').textContent = facultadElegida.sigla;
-    document.getElementById('eleccionCarrera').textContent = carreraElegida.nombre;
+/* Pinta la insignia de facultad/carrera en la pantalla de éxito, con
+   el ícono y el color REALES de esa facultad (mismos datos que usa el
+   selector de index.html) — nunca un color genérico. */
+function pintarInsigniaFacultad(siglaFacultad, nombreCarrera) {
+    const cont = document.getElementById('insigniaFacultad');
+    const facultad = FACULTADES.find((f) => f.sigla === siglaFacultad);
+    if (!cont || !facultad) return;
+
+    cont.style.borderColor = facultad.color;
+    cont.innerHTML = `
+        <img class="insignia-facultad__icono" src="${facultad.icono}" alt="Ícono de ${facultad.sigla}">
+        <div>
+            <div class="insignia-facultad__sigla" style="color:${facultad.color};">${facultad.sigla}</div>
+            <div class="insignia-facultad__carrera">${nombreCarrera}</div>
+        </div>
+    `;
+    cont.className = 'insignia-facultad';
+    cont.style.display = 'inline-flex';
 }
 
 /* ============================================================
@@ -158,8 +161,6 @@ function mostrarBloquePeriodoIngreso(userId) {
 
         const { error } = await supabase.from('perfiles_usuario').upsert({
             user_id: userId,
-            facultad: facultadElegida.sigla,
-            carrera: carreraElegida.nombre,
             periodo_ingreso: elegido,
         }, { onConflict: 'user_id' });
 
@@ -563,10 +564,11 @@ async function manejarSync(e, userId) {
         return;
     }
 
-    // Paso 3: guardar notas + fórmulas, y — si el backend trajo el PDF
-    // en esta misma sincronización — también el Avance Curricular, con
-    // el parser client-side ya validado (mismo patrón que usaba
-    // avance-curricular-debug.js, ahora conectado al flujo real).
+    // Paso 3: guardar notas + fórmulas, y — si el backend trajo el PDF en
+    // esta misma sincronización — también el Avance Curricular. Si eso
+    // sale bien, ESA es la única fuente de verdad para facultad/carrera:
+    // se guardan en el perfil y se pintan en la insignia, nunca elegidas
+    // a mano.
     try {
         mostrarProgreso('Guardando tus notas...');
         await guardarResultadoSync(userId, resultadoNotas);
@@ -576,9 +578,13 @@ async function manejarSync(e, userId) {
             try {
                 mostrarProgreso('Guardando tu Avance Curricular...');
                 const resultadoAvance = await guardarAvanceCurricularDesdeBase64(userId, resultadoNotas.avancePdfBase64);
-                textoAvance = resultadoAvance.ok
-                    ? ` Avance Curricular actualizado (${resultadoAvance.cursosGuardados} curso(s)).`
-                    : ' No se pudo guardar tu Avance Curricular esta vez, pero tus notas sí se guardaron.';
+                if (resultadoAvance.ok) {
+                    await guardarPerfilAcademicoDesdeAvance(userId, resultadoAvance);
+                    pintarInsigniaFacultad(resultadoAvance.facultad, resultadoAvance.carrera);
+                    textoAvance = ` Avance Curricular actualizado (${resultadoAvance.cursosGuardados} curso(s)).`;
+                } else {
+                    textoAvance = ' No se pudo guardar tu Avance Curricular esta vez, pero tus notas sí se guardaron.';
+                }
             } catch (errAvance) {
                 console.error('Error guardando Avance Curricular:', errAvance);
                 textoAvance = ' No se pudo guardar tu Avance Curricular esta vez, pero tus notas sí se guardaron.';
