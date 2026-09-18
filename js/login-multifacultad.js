@@ -261,7 +261,7 @@ function aplicarEstadoCredencial() {
     const aviso = document.getElementById('avisoCredencialGuardada');
     passwordInput.required = !hayCredencialGuardada;
     passwordInput.placeholder = hayCredencialGuardada
-        ? 'Déjalo vacío para usar tu contraseña guardada'
+        ? 'Contraseña'
         : 'Contraseña de INTRALU';
     aviso.style.display = hayCredencialGuardada ? 'block' : 'none';
 }
