@@ -82,7 +82,7 @@ async function pintarIdentidad(sesion) {
         document.getElementById('chipFacultadIcono').alt = `Ícono de ${facultad.sigla}`;
         document.getElementById('chipFacultadNombre').textContent = `${facultad.sigla} · ${perfil.carrera}`;
         document.getElementById('chipFacultadPeriodo').textContent = perfil.periodo_actual
-            ? `Periodo ${perfil.periodo_actual}`
+            ? `Periodo ${periodoConGuion(perfil.periodo_actual)}`
             : '';
     }
 }
