@@ -3,6 +3,5 @@ uvicorn[standard]==0.30.6
 playwright==1.47.0
 pydantic==2.9.2
 requests==2.32.3
-pdfplumber==0.11.4
 playwright-stealth==2.0.3
 cryptography>=42.0

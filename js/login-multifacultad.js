@@ -371,6 +371,7 @@ async function sincronizarConBackend(codigo, password, periodo, userId, recordar
                 periodo,
                 cursos: datosPeriodo.cursos,
                 errores: datosPeriodo.errores || [],
+                avancePdfBase64: data.avance_pdf_base64 || null,
             };
         }
     }
@@ -562,14 +563,27 @@ async function manejarSync(e, userId) {
         return;
     }
 
-    // Paso 3: guardar notas + fórmulas. El Avance Curricular todavía no
-    // viaja por este flujo (pendiente: migrar /api/avance-curricular al
-    // mismo login por contraseña) — llega vacío hasta entonces.
+    // Paso 3: guardar notas + fórmulas, y — si el backend trajo el PDF
+    // en esta misma sincronización — también el Avance Curricular, con
+    // el parser client-side ya validado (mismo patrón que usaba
+    // avance-curricular-debug.js, ahora conectado al flujo real).
     try {
         mostrarProgreso('Guardando tus notas...');
         await guardarResultadoSync(userId, resultadoNotas);
 
-        const textoAvance = '';
+        let textoAvance = '';
+        if (resultadoNotas.avancePdfBase64) {
+            try {
+                mostrarProgreso('Guardando tu Avance Curricular...');
+                const resultadoAvance = await guardarAvanceCurricularDesdeBase64(userId, resultadoNotas.avancePdfBase64);
+                textoAvance = resultadoAvance.ok
+                    ? ` Avance Curricular actualizado (${resultadoAvance.cursosGuardados} curso(s)).`
+                    : ' No se pudo guardar tu Avance Curricular esta vez, pero tus notas sí se guardaron.';
+            } catch (errAvance) {
+                console.error('Error guardando Avance Curricular:', errAvance);
+                textoAvance = ' No se pudo guardar tu Avance Curricular esta vez, pero tus notas sí se guardaron.';
+            }
+        }
 
         ocultarProgreso();
 

@@ -1,4 +1,4 @@
-import io
+import base64
 import logging
 import os
 import random
@@ -18,11 +18,6 @@ from fastapi.responses import Response
 from playwright.sync_api import sync_playwright
 from playwright_stealth import Stealth
 from pydantic import BaseModel, Field
-
-try:
-    import pdfplumber
-except ImportError:
-    pdfplumber = None
 
 app = FastAPI()
 
@@ -386,6 +381,7 @@ def _extraer_formulas_curso(page):
 
 
 DOMINIO_INTRALU = "alumnos.uni.edu.pe"
+URL_AVANCE_CURRICULAR_PDF = f"https://{DOMINIO_INTRALU}/informacion-academica/avance-curricular-pdf"
 
 
 def _login_intralu_page(context, codigo, password):
@@ -717,9 +713,33 @@ def _ejecutar_sync(job_id, codigo, password, periodo_especifico, user_id, record
                         "errores": errores_curso,
                     }
 
+            # 4. Avance Curricular: se aprovecha la MISMA page ya
+            # autenticada (page.request comparte cookies con page) — no
+            # hace falta un segundo login ni un segundo reCAPTCHA para
+            # esto. Best-effort: si falla, no se aborta la sincronización
+            # — las notas (lo principal) ya están listas, así que el
+            # frontend simplemente no actualiza el Avance Curricular esa
+            # vez y lo intenta de nuevo en la próxima sincronización.
+            avance_pdf_base64 = None
+            try:
+                resp_avance = page.request.get(URL_AVANCE_CURRICULAR_PDF)
+                if resp_avance.status == 200:
+                    avance_pdf_base64 = base64.b64encode(resp_avance.body()).decode()
+                else:
+                    logger.warning(
+                        "Job %s: Avance Curricular respondió HTTP %d, se omite esta vez",
+                        job_id, resp_avance.status,
+                    )
+            except Exception:
+                logger.exception(
+                    "Job %s: no se pudo descargar el Avance Curricular (no crítico, notas ya están listas)",
+                    job_id,
+                )
+
             with _jobs_lock:
                 _jobs[job_id]["status"] = "listo"
                 _jobs[job_id]["periodos"] = data_por_periodo
+                _jobs[job_id]["avance_pdf_base64"] = avance_pdf_base64
 
             duracion = time.time() - inicio
             logger.info(
@@ -835,6 +855,7 @@ def consultar_sync(job_id: str):
             "status": job["status"],
             "periodo_actual": job.get("periodo_actual"),
             "periodos": job.get("periodos"),
+            "avance_pdf_base64": job.get("avance_pdf_base64"),
         }
 
 
@@ -855,248 +876,6 @@ def debug_info(job_id: str):
     if not shot:
         raise HTTPException(status_code=404, detail="No hay info guardada para ese job_id (o el servidor se reinició desde entonces).")
     return {"url": shot["url"], "html_snippet": shot["html_snippet"]}
-
-
-# ================================================================
-# AVANCE CURRICULAR (PDF) — malla completa de 10 ciclos, prerrequisitos
-# y nota de cada curso, en un solo fetch autenticado. A diferencia de
-# /api/sync-intralu, esta SÍ es síncrona: es una sola descarga de PDF,
-# no recorre curso por curso, así que no necesita el patrón de
-# job/polling — toma segundos, no minutos.
-# ================================================================
-
-def _normalizar_periodo_pdf(periodo_pdf):
-    """Traduce el formato de periodo que usa el PDF ('232', '24V'...) al
-    formato de 5 dígitos que usa el resto del sistema ('20232', '20233').
-
-    ⚠️ CONFIRMADO CON DATOS REALES (no es una suposición): el PDF numera
-    el verano por el AÑO CALENDARIO REAL en que ocurre ('24V' = el verano
-    que pasó en 2024, examen de enero-marzo). Pero el resto del sistema
-    (ver etiquetar_periodo() arriba) numera ese MISMO verano con el año
-    del semestre regular al que sigue — es decir, el verano que sigue a
-    '2023-2' se llama internamente '2023-3' aunque ocurra en el
-    calendario de 2024. Por eso, y SOLO para verano, hay que restar 1 al
-    año del PDF antes de armar el código interno. Para semestres
-    regulares (tipo 1 o 2) no hay desfase: el año del PDF coincide 1:1.
-
-    Ejemplos: '232' -> '20232' (2023-2, sin ajuste).
-              '24V' -> año PDF 2024, -1 por ser verano -> '20233' (2023-3).
-    """
-    if not periodo_pdf:
-        return None
-    p = periodo_pdf.strip().upper()
-    if len(p) < 3:
-        return None
-    anio_corto, tipo_raw = p[:2], p[2:]
-    if not anio_corto.isdigit():
-        return None
-    anio_pdf = int(f"20{anio_corto}")
-    if tipo_raw == "V":
-        anio = anio_pdf - 1  # el verano se etiqueta con el año del semestre anterior
-        tipo = "3"
-    elif tipo_raw in ("1", "2"):
-        anio = anio_pdf
-        tipo = tipo_raw
-    else:
-        return None
-    return f"{anio}{tipo}"
-
-
-def _parsear_avance_curricular_pdf(pdf_bytes):
-    """Convierte el PDF de Avance Curricular en una lista de cursos.
-
-    Columnas esperadas: Código, Curso, Cred., Pre Requisitos, Facultad,
-    Periodo, Nota, [veces llevado], [situación].
-
-    Filtro de calidad CONFIRMADO con datos reales: además de la malla,
-    el PDF trae texto de resumen al final ("CURSOS ELECTIVOS",
-    "Promedio Ponderado", "N° Créditos Llevados", una tabla de créditos
-    mínimos/máximos por ciclo relativo...) que pdfplumber detecta como
-    si fueran más filas de la misma tabla. En vez de tratar de nombrar
-    cada uno de esos textos a mano (frágil: cambiaría con cada malla o
-    facultad), se valida que el código tenga la FORMA real de un código
-    de curso UNI (letras + números, sin espacios) — cualquier fila que
-    no calce se descarta, sea basura de pie de página o cualquier otra
-    cosa inesperada.
-    """
-    if pdfplumber is None:
-        raise RuntimeError("Falta instalar pdfplumber (agrégalo a requirements.txt)")
-
-    # Códigos reales confirmados: BIC01, BMA02, FB101, SI101, GE605,
-    # TE111, HU400, SI036... siempre 2-4 letras + 2-4 números, sin
-    # espacios ni símbolos. Filtra de un solo golpe encabezados de
-    # sección ("CURSOS ELECTIVOS"), texto de resumen ("Promedio
-    # Ponderado", "N° Créditos Llevados") y la tabla de créditos por
-    # ciclo relativo ("01".."10", "xx") — ninguno de esos calza.
-    PATRON_CODIGO_CURSO = re.compile(r"^[A-Z]{2,4}\d{2,4}[A-Z]?$")
-
-    cursos = []
-    ciclo_actual = None
-    categoria_actual = "obligatorio"  # cambia a "electivo"/"electivo_complementario" al pasar esos títulos de sección
-
-    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for num_pagina, pagina in enumerate(pdf.pages, start=1):
-            tablas = pagina.extract_tables()
-            logger.info("Avance curricular: página %d -> %d tabla(s) detectada(s)", num_pagina, len(tablas))
-
-            for tabla in tablas:
-                for fila in tabla:
-                    celdas = [(c or "").strip() for c in fila]
-                    texto_fila = " ".join(celdas).strip()
-
-                    if not texto_fila:
-                        continue
-
-                    # Fila de encabezado de ciclo: "CICLO : 01" (suele venir
-                    # como una única celda larga que ocupa toda la fila).
-                    # Un ciclo nuevo también reinicia la categoría a
-                    # "obligatorio" — los títulos de electivos solo aplican
-                    # dentro del bloque de ciclo 10 donde aparecen.
-                    m_ciclo = re.search(r"CICLO\s*:\s*0?(\d+)", texto_fila, re.I)
-                    if m_ciclo and len(texto_fila) < 20:
-                        ciclo_actual = int(m_ciclo.group(1))
-                        categoria_actual = "obligatorio"
-                        continue
-
-                    # Títulos de sección de electivos: no son cursos en sí,
-                    # pero marcan la categoría de TODO lo que viene después,
-                    # hasta el próximo título o el próximo "CICLO : NN".
-                    if "ELECTIVO" in texto_fila.upper():
-                        if "COMPLEMENTARIO" in texto_fila.upper():
-                            categoria_actual = "electivo_complementario"
-                        else:
-                            categoria_actual = "electivo"
-                        continue
-
-                    # Fila de encabezado de columnas ("Código", "Curso"...)
-                    if celdas[0].lower() in ("código", "codigo"):
-                        continue
-
-                    codigo = celdas[0] if len(celdas) > 0 else ""
-
-                    if not codigo:
-                        # Fila "huérfana": probablemente el nombre del curso se
-                        # partió en dos líneas dentro de la celda del PDF — la
-                        # pegamos al curso anterior en vez de perderla.
-                        if cursos and len(celdas) > 1 and celdas[1]:
-                            cursos[-1]["nombre"] = (cursos[-1]["nombre"] + " " + celdas[1]).strip()
-                        continue
-
-                    if not PATRON_CODIGO_CURSO.fullmatch(codigo):
-                        # No tiene forma de código de curso real — descartado
-                        # (texto de resumen, encabezado de sección, etc.).
-                        logger.info("Avance curricular: fila descartada (código no válido: %r) -> %r", codigo, celdas)
-                        continue
-
-                    nombre = celdas[1].rstrip("-").strip() if len(celdas) > 1 else ""
-                    creditos_raw = celdas[2] if len(celdas) > 2 else ""
-                    prereq = celdas[3] if len(celdas) > 3 else ""
-                    facultad = celdas[4] if len(celdas) > 4 else ""
-                    periodo_pdf = celdas[5] if len(celdas) > 5 else ""
-                    nota_raw = celdas[6] if len(celdas) > 6 else ""
-                    veces_raw = celdas[7] if len(celdas) > 7 else ""
-                    situacion = celdas[8] if len(celdas) > 8 else ""
-
-                    try:
-                        creditos = int(creditos_raw)
-                    except ValueError:
-                        creditos = None
-
-                    try:
-                        nota = float(nota_raw) if nota_raw else None
-                    except ValueError:
-                        nota = None
-
-                    try:
-                        veces_llevado = int(veces_raw) if veces_raw else None
-                    except ValueError:
-                        veces_llevado = None
-
-                    cursos.append({
-                        "ciclo": ciclo_actual,
-                        "categoria": categoria_actual,
-                        "codigo": codigo,
-                        "nombre": nombre,
-                        "creditos": creditos,
-                        "prerequisitos": prereq or None,
-                        "facultad": facultad or None,
-                        "periodo_pdf": periodo_pdf or None,
-                        "periodo_normalizado": _normalizar_periodo_pdf(periodo_pdf) if periodo_pdf else None,
-                        "nota": nota,
-                        "veces_llevado": veces_llevado,
-                        "situacion": situacion or None,
-                    })
-
-    logger.info("Avance curricular: %d curso(s) interpretado(s) en total", len(cursos))
-    return cursos
-
-
-class AvanceCurricularPorCookieRequest(BaseModel):
-    session_cookie: str = Field(..., description="Cookie 'intranet_alumno_session' de INTRALU, tomada por el conector.")
-    xsrf_token: str = Field(..., description="Cookie 'XSRF-TOKEN' de INTRALU, tomada por el conector.")
-
-
-@app.post("/api/avance-curricular")
-def obtener_avance_curricular(credentials: AvanceCurricularPorCookieRequest):
-    """Descarga autenticada del PDF de Avance Curricular + parseo, usando
-    la sesión prestada por el conector (sin volver a tocar el login ni el
-    reCAPTCHA)."""
-    adquirido = _semaforo_sync.acquire(blocking=False)
-    if not adquirido:
-        raise HTTPException(
-            status_code=429,
-            detail="Hay una sincronización en curso ahora mismo. Intenta de nuevo en un minuto."
-        )
-
-    inicio = time.time()
-    browser = None
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-
-            try:
-                page = _login_por_cookie(context, credentials.session_cookie, credentials.xsrf_token)
-            except SesionIntraluExpirada:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Tu sesión de INTRALU expiró o cerraste sesión. Vuelve a iniciar sesión en INTRALU e intenta de nuevo."
-                )
-
-            # Descarga autenticada del PDF: reusa las cookies de sesión de
-            # este mismo browser context (page.request comparte cookies con
-            # page) — no hace falta ningún login aparte para el PDF.
-            resp = page.request.get("https://alumnos.uni.edu.pe/informacion-academica/avance-curricular-pdf")
-            if resp.status != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"No se pudo descargar el PDF de Avance Curricular (HTTP {resp.status}).",
-                )
-
-            pdf_bytes = resp.body()
-            cursos = _parsear_avance_curricular_pdf(pdf_bytes)
-
-            duracion = time.time() - inicio
-            logger.info(
-                "Avance curricular: ✅ COMPLETO en %.1fs — %d cursos", duracion, len(cursos),
-            )
-
-            return {"status": "success", "total_cursos": len(cursos), "cursos": cursos}
-
-    except HTTPException:
-        logger.info("Avance curricular: ❌ TERMINÓ CON ERROR tras %.1fs", time.time() - inicio)
-        raise
-    except Exception as e:
-        logger.exception("Error obteniendo avance curricular")
-        logger.info("Avance curricular: ❌ TERMINÓ CON ERROR tras %.1fs", time.time() - inicio)
-        raise HTTPException(status_code=500, detail=f"Error en servidor: {str(e)}")
-    finally:
-        if browser:
-            try:
-                browser.close()
-            except Exception:
-                pass
-        _semaforo_sync.release()
 
 
 # ================================================================
