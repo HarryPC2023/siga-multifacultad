@@ -73,13 +73,7 @@
 .rc-titulo {
     font-family: var(--font-heading, 'Orbitron', sans-serif);
     font-weight: 700;
-    font-size: 0.95rem;
-}
-
-.rc-subtitulo {
-    font-size: 0.78rem;
-    color: #6b7280;
-    margin-top: 2px;
+    font-size: 1.05rem;
 }
 
 .rc-cerrar {

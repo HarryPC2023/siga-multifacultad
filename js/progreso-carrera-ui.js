@@ -14,6 +14,16 @@ import { construirProgresoCarrera, datosRutaCurso } from './progreso-carrera.js'
 
 const ROMANOS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 
+/* Antes de esconder un panel (aria-hidden / inert) el foco tiene que salir de él; si no,
+   el navegador avisa "Blocked aria-hidden on an element because its descendant retained
+   focus". Se devuelve al botón que lo abrió (o se suelta si ya no existe). */
+export function soltarFocoDe(panel, disparador) {
+    const activo = document.activeElement;
+    if (!activo || !panel.contains(activo)) return;
+    if (disparador && disparador.isConnected && typeof disparador.focus === 'function') disparador.focus();
+    else activo.blur();
+}
+
 export function escaparHtml(texto) {
     return String(texto ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -170,6 +180,7 @@ export function montarProgresoCarrera({ cargarFilas, obtenerEnCurso = () => [] }
     let progreso = null;
     let seleccionado = null;
     let montado = false;
+    let disparador = null;   // botón que abrió la ventana: recupera el foco al cerrarla
 
     const $ = (id) => document.getElementById(id);
 
@@ -177,7 +188,7 @@ export function montarProgresoCarrera({ cargarFilas, obtenerEnCurso = () => [] }
         if (montado) return;
         document.body.insertAdjacentHTML('beforeend', `
             <div id="pc-overlay" class="pc-overlay"></div>
-            <div id="pc-modal" class="pc-modal" role="dialog" aria-label="Progreso de tu carrera" aria-hidden="true">
+            <div id="pc-modal" class="pc-modal" role="dialog" aria-label="Progreso de tu carrera" aria-hidden="true" inert>
                 <div class="pc-modal-header">
                     <span class="pc-modal-titulo">🗺️ Progreso de tu carrera</span>
                     <button type="button" class="pc-cerrar" id="pc-cerrar" aria-label="Cerrar">✕</button>
@@ -199,10 +210,12 @@ export function montarProgresoCarrera({ cargarFilas, obtenerEnCurso = () => [] }
     }
 
     async function abrir() {
+        disparador = document.activeElement;
         montar();
         seleccionado = null;
         $('pc-overlay').classList.add('pc-visible');
         $('pc-modal').classList.add('pc-visible');
+        $('pc-modal').removeAttribute('inert');
         $('pc-modal').setAttribute('aria-hidden', 'false');
 
         const cuerpo = $('pc-body');
@@ -222,6 +235,8 @@ export function montarProgresoCarrera({ cargarFilas, obtenerEnCurso = () => [] }
         if (!montado) return;
         $('pc-overlay').classList.remove('pc-visible');
         $('pc-modal').classList.remove('pc-visible');
+        soltarFocoDe($('pc-modal'), disparador);
+        $('pc-modal').setAttribute('inert', '');
         $('pc-modal').setAttribute('aria-hidden', 'true');
     }
 

@@ -425,6 +425,8 @@
             font-size: 1rem;
             line-height: 1.3;
             margin: 0 0 4px;
+            overflow-wrap: anywhere;
+            hyphens: auto;
         }
 
         .curso-card__meta-fila {
@@ -917,14 +919,8 @@
         .meta-panel__titulo {
             font-family: var(--font-heading);
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 1.05rem;
             color: var(--ink);
-        }
-
-        .meta-panel__subtitulo {
-            font-size: 0.78rem;
-            color: var(--ink-soft);
-            margin-top: 2px;
         }
 
         .meta-panel__cerrar {
@@ -1428,14 +1424,11 @@
 
     <!-- Meta del curso: panel lateral (escritorio) / hoja inferior (celular). -->
     <div id="metaOverlay" class="meta-overlay"></div>
-    <aside id="metaPanel" class="meta-panel" aria-hidden="true" aria-label="Meta del curso">
+    <aside id="metaPanel" class="meta-panel" aria-hidden="true" aria-label="Meta del curso" inert>
         <div class="meta-panel__cabecera">
             <div class="meta-panel__titulo-grupo">
-                <span class="meta-panel__icono">📊</span>
-                <div>
-                    <div class="meta-panel__titulo">Análisis académico</div>
-                    <div class="meta-panel__subtitulo">🎯 Meta del curso</div>
-                </div>
+                <span class="meta-panel__icono">🎯</span>
+                <div class="meta-panel__titulo">Meta del curso</div>
             </div>
             <button type="button" class="meta-panel__cerrar" id="metaCerrar" aria-label="Cerrar">✕</button>
         </div>

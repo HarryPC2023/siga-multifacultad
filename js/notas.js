@@ -19,7 +19,7 @@ import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { calcularNecesito, conPendientesEnCero } from './escenarios.js';
 import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
-import { montarProgresoCarrera, nombreLindo } from './progreso-carrera-ui.js';
+import { montarProgresoCarrera, nombreLindo, soltarFocoDe } from './progreso-carrera-ui.js';
 import { montarRutaCurso } from './ruta-curso-ui.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
@@ -247,6 +247,7 @@ function seleccionarPeriodo(periodo) {
    ============================================================ */
 let metaCursoClave = null;    // `codigo|seccion` del curso elegido en el panel
 let metaValorTexto = '14';    // lo último que escribió el alumno (14 por defecto, como en SIGA)
+let metaDisparador = null;    // botón que abrió el panel: recupera el foco al cerrarlo
 
 /* Nombre legible del curso: INTRALU lo entrega en MAYÚSCULAS, sin tildes y con un guion
    al final ("ECONOMIA GENERAL-"); SIGA lo muestra como "Economía General". */
@@ -266,6 +267,7 @@ function inicializarMetaCurso() {
 }
 
 function abrirMetaCurso() {
+    metaDisparador = document.activeElement;
     const cuerpo = document.getElementById('metaCuerpo');
     const cursos = [...(notasPorPeriodo[periodoActivo] || [])]
         .sort((a, b) => nombreCursoMeta(a).localeCompare(nombreCursoMeta(b), 'es'));
@@ -313,6 +315,7 @@ function abrirMetaCurso() {
     document.getElementById('metaOverlay').classList.add('visible');
     const panel = document.getElementById('metaPanel');
     panel.classList.add('abierto');
+    panel.removeAttribute('inert');
     panel.setAttribute('aria-hidden', 'false');
 }
 
@@ -320,6 +323,8 @@ function cerrarMetaCurso() {
     document.getElementById('metaOverlay').classList.remove('visible');
     const panel = document.getElementById('metaPanel');
     panel.classList.remove('abierto');
+    soltarFocoDe(panel, metaDisparador);
+    panel.setAttribute('inert', '');
     panel.setAttribute('aria-hidden', 'true');
 }
 

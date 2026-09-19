@@ -12,7 +12,7 @@
 //     obtenerCursosDelPeriodo():  → [{ codigo, nombre }] de los cursos en pantalla
 //     obtenerEnCurso():           → códigos de curso que el alumno lleva ahora (opcional)
 import { construirProgresoCarrera, datosRutaCurso } from './progreso-carrera.js';
-import { nombreLindo, escaparHtml } from './progreso-carrera-ui.js';
+import { nombreLindo, escaparHtml, soltarFocoDe } from './progreso-carrera-ui.js';
 
 const ETIQUETA_CATEGORIA = { electivo: ' · Electivo', electivo_complementario: ' · Electivo complementario' };
 
@@ -92,6 +92,7 @@ export function montarRutaCurso({ cargarFilas, obtenerCursosDelPeriodo, obtenerE
     let progreso = null;
     let seleccionado = null;
     let montado = false;
+    let disparador = null;   // botón que abrió el panel: recupera el foco al cerrarlo
 
     const $ = (id) => document.getElementById(id);
 
@@ -99,14 +100,11 @@ export function montarRutaCurso({ cargarFilas, obtenerCursosDelPeriodo, obtenerE
         if (montado) return;
         document.body.insertAdjacentHTML('beforeend', `
             <div id="rc-overlay" class="rc-overlay"></div>
-            <aside id="rc-panel" class="rc-panel" aria-hidden="true" aria-label="Ruta del Curso">
+            <aside id="rc-panel" class="rc-panel" aria-hidden="true" aria-label="Ruta del curso" inert>
                 <div class="rc-cabecera">
                     <div class="rc-titulo-grupo">
-                        <span class="rc-icono">📊</span>
-                        <div>
-                            <div class="rc-titulo">Análisis académico</div>
-                            <div class="rc-subtitulo">🔗 Ruta del Curso</div>
-                        </div>
+                        <span class="rc-icono">🔗</span>
+                        <div class="rc-titulo">Ruta del curso</div>
                     </div>
                     <button type="button" class="rc-cerrar" id="rc-cerrar" aria-label="Cerrar">✕</button>
                 </div>
@@ -127,9 +125,11 @@ export function montarRutaCurso({ cargarFilas, obtenerCursosDelPeriodo, obtenerE
     }
 
     async function abrir() {
+        disparador = document.activeElement;
         montar();
         $('rc-overlay').classList.add('rc-visible');
         $('rc-panel').classList.add('rc-abierto');
+        $('rc-panel').removeAttribute('inert');
         $('rc-panel').setAttribute('aria-hidden', 'false');
 
         const cuerpo = $('rc-cuerpo');
@@ -186,6 +186,8 @@ export function montarRutaCurso({ cargarFilas, obtenerCursosDelPeriodo, obtenerE
         if (!montado) return;
         $('rc-overlay').classList.remove('rc-visible');
         $('rc-panel').classList.remove('rc-abierto');
+        soltarFocoDe($('rc-panel'), disparador);
+        $('rc-panel').setAttribute('inert', '');
         $('rc-panel').setAttribute('aria-hidden', 'true');
     }
 
