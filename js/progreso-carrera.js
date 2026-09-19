@@ -41,8 +41,11 @@ function notaNumerica(valor) {
 /* Estado que dice la fila por sí sola (antes de mirar los prerrequisitos). */
 function estadoBase(fila, enCurso) {
     const nota = notaNumerica(fila.nota);
-    if (nota !== null) return nota >= UMBRAL_APROBADO ? 'aprobado' : 'jalado';
+    if (nota !== null && nota >= UMBRAL_APROBADO) return 'aprobado';
+    // Lo está llevando ahora (por ejemplo, repite un curso jalado): el Avance todavía
+    // muestra la nota del intento anterior, pero lo que manda es que ya está matriculado.
     if (enCurso.has(fila.codigo_curso)) return 'en_curso';
+    if (nota !== null) return 'jalado';
     if (!esNula(fila.periodo_pdf)) return 'en_curso'; // matriculado, todavía sin nota
     return 'pendiente';
 }

@@ -19,6 +19,7 @@ import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { calcularNecesito, conPendientesEnCero } from './escenarios.js';
 import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
+import { montarProgresoCarrera } from './progreso-carrera-ui.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
 
@@ -97,19 +98,15 @@ async function pintarIdentidad(sesion) {
 
 /* ============================================================
    ANÁLISIS ACADÉMICO
-   - Meta del curso: YA FUNCIONA en este sandbox (panel lateral, más
-     abajo), calculada con las fórmulas de INTRALU.
-   - Progreso de tu carrera y Ruta del Curso: 🚧 todavía en camino.
-     Su motor vive hoy solo en producción SIGA (progreso-malla.js, el
-     grafo de prerrequisitos); mientras tanto su chip abre un aviso
-     honesto en vez de fingir un cálculo que no existe.
+   - Meta del curso: YA FUNCIONA (panel lateral, más abajo), calculada con
+     las fórmulas de INTRALU.
+   - Progreso de tu carrera: YA FUNCIONA (ventana con el mapa por ciclos),
+     armada con el Avance Curricular del propio alumno (progreso-carrera.js
+     y progreso-carrera-ui.js): sirve para cualquier facultad y carrera.
+   - Ruta del Curso: 🚧 todavía en camino (usará el mismo progreso-carrera.js);
+     mientras tanto su chip abre un aviso honesto.
    ============================================================ */
 const AA_INFO = {
-    progreso: {
-        icono: '🗺️',
-        titulo: 'Progreso de tu carrera',
-        desc: 'El mapa completo de tu malla por ciclos, con qué ya aprobaste y qué se te abre después. Ya funciona en producción SIGA — se está portando a este sandbox.',
-    },
     ruta: {
         icono: '🔗',
         titulo: 'Ruta del Curso',
@@ -117,10 +114,34 @@ const AA_INFO = {
     },
 };
 
+let progresoCarrera = null;
+
+/* Filas del Avance Curricular del alumno. La tabla está protegida por RLS:
+   cada usuario solo ve las suyas. */
+async function cargarFilasAvance() {
+    const { data, error } = await supabase
+        .from('avance_curricular')
+        .select('categoria, ciclo, codigo_curso, nombre_curso, creditos, prerequisitos, periodo_pdf, nota, veces_llevado, situacion');
+    if (error) throw error;
+    return data || [];
+}
+
+/* Cursos que el alumno lleva AHORA: los de los periodos que todavía están abiertos. */
+function codigosEnCursoAhora() {
+    const codigos = [];
+    Object.keys(notasPorPeriodo).forEach((periodo) => {
+        if (!periodoEstaAbierto(periodo)) return;
+        (notasPorPeriodo[periodo] || []).forEach((curso) => codigos.push(curso.codigo_curso));
+    });
+    return codigos;
+}
+
 function inicializarAnalisisAcademico() {
+    progresoCarrera = montarProgresoCarrera({ cargarFilas: cargarFilasAvance, obtenerEnCurso: codigosEnCursoAhora });
     document.querySelectorAll('.chip-herramienta').forEach((chip) => {
         chip.addEventListener('click', () => {
             if (chip.dataset.aa === 'meta') abrirMetaCurso();
+            else if (chip.dataset.aa === 'progreso') progresoCarrera.abrir();
             else abrirAvisoAnalisisAcademico(chip.dataset.aa);
         });
     });
