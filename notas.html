@@ -471,10 +471,22 @@
             color: var(--acento-amarillo);
         }
 
+        /* Con alguna nota pero sin nota final: azul suave, nunca rojo. */
+        .badge-proceso {
+            background: #E4EEFF;
+            color: #2B5DB8;
+        }
+
+        /* Sin ninguna nota en un periodo cerrado: gris neutro. */
+        .badge-sindatos {
+            background: #EEF0F3;
+            color: #6B7280;
+        }
+
         .btn-ingresar-notas {
-            background: #e0f7fa;
+            background: #e6f6f8;
             color: color-mix(in srgb, var(--brand-morado) 78%, #000);
-            border: 1px solid #b2ebf2;
+            border: 1px solid #bfe8ee;
             border-radius: 6px;
             padding: 5px 14px;
             font-family: var(--font-body);
