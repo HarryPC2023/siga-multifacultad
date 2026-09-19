@@ -798,22 +798,11 @@ function renderizarCursos() {
     const contenedor = document.getElementById('listaCursos');
     contenedor.innerHTML = '';
 
-    let sumaPonderada = 0, sumaCreditos = 0;
-    const enRiesgo = [];
-
     cursos.forEach((curso, idx) => {
         const { notaFinal: notaFinalCalculada } = calcularCurso(curso);
         const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
         const estado = estadoCurso(notaFinal, periodoActivo, hayAlgunaNota(curso));
         const creditos = formulaDeCurso(curso)?.creditos ?? null;
-
-        if (notaFinal !== null && creditos) {
-            sumaPonderada += notaFinal * creditos;
-            sumaCreditos += creditos;
-        }
-        if (notaFinal !== null && (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico')) {
-            enRiesgo.push(`${curso.nombre_curso || curso.codigo_curso} — ${notaFinal}`);
-        }
 
         const card = document.createElement('div');
         card.className = 'curso-card';
@@ -837,8 +826,42 @@ function renderizarCursos() {
         contenedor.appendChild(card);
     });
 
+    actualizarResumenPeriodo();
+    document.getElementById('accionesLista').style.display = cursos.length ? 'flex' : 'none';
+}
+
+/* Trunca (no redondea) a N decimales, como INTRALU y SIGA. El 1e-9 evita que un
+   error de coma flotante (12.671 → 12.6709999…) le quite una milésima. */
+function truncarDecimales(valor, decimales) {
+    const f = 10 ** decimales;
+    return Math.trunc(valor * f + 1e-9) / f;
+}
+
+/* Promedio ponderado del periodo (3 decimales, TRUNCADO igual que INTRALU y SIGA)
+   y aviso de cursos en riesgo. Se recalcula al pintar la lista y también EN VIVO
+   cada vez que el alumno escribe una nota. */
+function actualizarResumenPeriodo() {
+    const cursos = notasPorPeriodo[periodoActivo] || [];
+    let sumaPonderada = 0, sumaCreditos = 0;
+    const enRiesgo = [];
+
+    cursos.forEach((curso) => {
+        const { notaFinal: notaFinalCalculada } = calcularCurso(curso);
+        const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
+        const estado = estadoCurso(notaFinal, periodoActivo, hayAlgunaNota(curso));
+        const creditos = formulaDeCurso(curso)?.creditos ?? null;
+
+        if (notaFinal !== null && creditos) {
+            sumaPonderada += notaFinal * creditos;
+            sumaCreditos += creditos;
+        }
+        if (notaFinal !== null && (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico')) {
+            enRiesgo.push(`${curso.nombre_curso || curso.codigo_curso} — ${notaFinal}`);
+        }
+    });
+
     document.getElementById('promedioPonderado').textContent =
-        sumaCreditos ? (sumaPonderada / sumaCreditos).toFixed(2) : '--';
+        sumaCreditos ? truncarDecimales(sumaPonderada / sumaCreditos, 3).toFixed(3) : '--';
 
     const banner = document.getElementById('bannerRiesgo');
     if (enRiesgo.length) {
@@ -850,8 +873,6 @@ function renderizarCursos() {
     } else {
         banner.classList.remove('visible');
     }
-
-    document.getElementById('accionesLista').style.display = cursos.length ? 'flex' : 'none';
 }
 
 function toggleCurso(idx, curso) {
@@ -985,6 +1006,7 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
         badge.textContent = estado.texto;
         badge.className = `badge ${estado.clase}`;
     }
+    actualizarResumenPeriodo();
 
     const caja = cuerpo.querySelector('.caja-necesito');
     if (!formula || !formula.formula_nota_final) {
