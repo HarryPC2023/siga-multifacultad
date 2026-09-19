@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="css/tema-siga.css">
     <link rel="stylesheet" href="css/selector-personalizado.css">
     <link rel="stylesheet" href="css/progreso-carrera.css">
+    <link rel="stylesheet" href="css/ruta-curso.css">
 
     <style>
         body {
@@ -838,65 +839,6 @@
             transform: translate(-50%, 0);
         }
 
-        /* ---------- Panel de Análisis Académico (🚧 en camino en este
-           sandbox — el motor real vive hoy solo en producción SIGA, ver
-           nota en analisisAcademico.js). ---------- */
-        .aa-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.4);
-            z-index: 400;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .aa-overlay.visible {
-            display: flex;
-        }
-
-        .aa-caja {
-            background: #fff;
-            border-radius: 16px;
-            padding: 28px 24px;
-            max-width: 360px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
-        }
-
-        .aa-caja__icono {
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
-        .aa-caja__titulo {
-            font-family: var(--font-heading);
-            font-weight: 700;
-            font-size: 1rem;
-            margin: 0 0 8px;
-        }
-
-        .aa-caja__desc {
-            font-size: 0.85rem;
-            color: var(--ink-soft);
-            line-height: 1.6;
-            margin: 0 0 18px;
-        }
-
-        .aa-caja__cerrar {
-            font-family: var(--font-body);
-            font-weight: 700;
-            font-size: 0.85rem;
-            padding: 10px 24px;
-            border: none;
-            border-radius: 50px;
-            background: var(--brand-morado);
-            color: #fff;
-            cursor: pointer;
-        }
-
         /* ============================================================
            META DEL CURSO — panel lateral (escritorio) / hoja inferior
            (celular). Mismo diseño que SIGA producción. El contenido va
@@ -1258,7 +1200,6 @@
         .modal-mensaje,
         .modal-btn,
         .toast-notas,
-        .aa-caja__cerrar,
         .select-custom-trigger,
         .select-custom-lista li {
             font-family: var(--font-datos);
@@ -1271,7 +1212,6 @@
         }
 
         .chip-herramienta,
-        .aa-caja__titulo,
         .meta-panel__titulo,
         .meta-tarjeta__nombre,
         .meta-campo input {
@@ -1414,16 +1354,6 @@
         <div class="meta-panel__cuerpo" id="metaCuerpo"></div>
     </aside>
 
-    <!-- Aviso de "en camino" para Progreso de tu carrera y Ruta del Curso:
-         su motor vive en producción SIGA y todavía no se portó a este sandbox. -->
-    <div id="aaOverlay" class="aa-overlay">
-        <div class="aa-caja">
-            <div class="aa-caja__icono" id="aaIcono">🚧</div>
-            <h2 class="aa-caja__titulo" id="aaTitulo">En camino</h2>
-            <p class="aa-caja__desc" id="aaDesc"></p>
-            <button type="button" class="aa-caja__cerrar" id="aaCerrar">Entendido</button>
-        </div>
-    </div>
 
     <script src="js/selector-personalizado.js"></script>
     <script type="module" src="js/notas.js"></script>

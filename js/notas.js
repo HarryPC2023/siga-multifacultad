@@ -20,6 +20,7 @@ import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engi
 import { calcularNecesito, conPendientesEnCero } from './escenarios.js';
 import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
 import { montarProgresoCarrera, nombreLindo } from './progreso-carrera-ui.js';
+import { montarRutaCurso } from './ruta-curso-ui.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
 
@@ -103,24 +104,18 @@ async function pintarIdentidad(sesion) {
 }
 
 /* ============================================================
-   ANÁLISIS ACADÉMICO
-   - Meta del curso: YA FUNCIONA (panel lateral, más abajo), calculada con
-     las fórmulas de INTRALU.
-   - Progreso de tu carrera: YA FUNCIONA (ventana con el mapa por ciclos),
-     armada con el Avance Curricular del propio alumno (progreso-carrera.js
-     y progreso-carrera-ui.js): sirve para cualquier facultad y carrera.
-   - Ruta del Curso: 🚧 todavía en camino (usará el mismo progreso-carrera.js);
-     mientras tanto su chip abre un aviso honesto.
+   ANÁLISIS ACADÉMICO — las tres herramientas ya funcionan:
+   - Meta del curso: panel lateral (más abajo), calculada con las
+     fórmulas de INTRALU.
+   - Progreso de tu carrera: ventana con el mapa por ciclos
+     (progreso-carrera.js y progreso-carrera-ui.js).
+   - Ruta del Curso: panel con lo que necesitas y lo que se abre al
+     aprobarlo (ruta-curso-ui.js).
+   Las dos últimas salen del Avance Curricular del propio alumno, así
+   que sirven para cualquier facultad y carrera.
    ============================================================ */
-const AA_INFO = {
-    ruta: {
-        icono: '🔗',
-        titulo: 'Ruta del Curso',
-        desc: 'Qué necesitas para llevar un curso y qué se te desbloquea al aprobarlo. Ya funciona en producción SIGA — se está portando a este sandbox.',
-    },
-};
-
 let progresoCarrera = null;
+let rutaCurso = null;
 
 /* Filas del Avance Curricular del alumno. La tabla está protegida por RLS:
    cada usuario solo ve las suyas. */
@@ -142,33 +137,31 @@ function codigosEnCursoAhora() {
     return codigos;
 }
 
+/* Cursos del periodo que el alumno tiene en pantalla (selector de Ruta del Curso). */
+function cursosDelPeriodoActivo() {
+    return (notasPorPeriodo[periodoActivo] || []).map((curso) => ({
+        codigo: curso.codigo_curso,
+        nombre: nombreCursoLindo(curso),
+    }));
+}
+
 function inicializarAnalisisAcademico() {
     progresoCarrera = montarProgresoCarrera({ cargarFilas: cargarFilasAvance, obtenerEnCurso: codigosEnCursoAhora });
+    rutaCurso = montarRutaCurso({
+        cargarFilas: cargarFilasAvance,
+        obtenerCursosDelPeriodo: cursosDelPeriodoActivo,
+        obtenerEnCurso: codigosEnCursoAhora,
+    });
+
+    const herramientas = {
+        meta: abrirMetaCurso,
+        progreso: () => progresoCarrera.abrir(),
+        ruta: () => rutaCurso.abrir(),
+    };
     document.querySelectorAll('.chip-herramienta').forEach((chip) => {
-        chip.addEventListener('click', () => {
-            if (chip.dataset.aa === 'meta') abrirMetaCurso();
-            else if (chip.dataset.aa === 'progreso') progresoCarrera.abrir();
-            else abrirAvisoAnalisisAcademico(chip.dataset.aa);
-        });
+        chip.addEventListener('click', () => herramientas[chip.dataset.aa]?.());
     });
     inicializarMetaCurso();
-    document.getElementById('aaCerrar').addEventListener('click', cerrarAvisoAnalisisAcademico);
-    document.getElementById('aaOverlay').addEventListener('click', (e) => {
-        if (e.target.id === 'aaOverlay') cerrarAvisoAnalisisAcademico();
-    });
-}
-
-function abrirAvisoAnalisisAcademico(id) {
-    const info = AA_INFO[id];
-    if (!info) return;
-    document.getElementById('aaIcono').textContent = info.icono;
-    document.getElementById('aaTitulo').textContent = info.titulo;
-    document.getElementById('aaDesc').textContent = info.desc;
-    document.getElementById('aaOverlay').classList.add('visible');
-}
-
-function cerrarAvisoAnalisisAcademico() {
-    document.getElementById('aaOverlay').classList.remove('visible');
 }
 
 async function cargarDatos(userId) {
@@ -1088,7 +1081,7 @@ function limpiarNotasDeCurso(cuerpo, curso, idx) {
 
     mostrarToast(habiaEscritas || habiaGuardadas
         ? '🗑️ Notas del curso borradas'
-        : 'ℹ️ Notas cargadas de INTRALU. Para probar otra nota, escribe sobre ella');
+        : 'ℹ️ Este curso no tiene notas escritas por ti');
 }
 
 function actualizarCuerpoCurso(cuerpo, curso, idx) {
