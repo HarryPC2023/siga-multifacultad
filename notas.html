@@ -566,21 +566,25 @@
             color: var(--ink);
         }
 
+        /* ---------- ¿Qué nota necesito para aprobar? — mismo diseño que SIGA:
+           caja celeste con borde punteado y las notas en chips BLANCOS para
+           que resalten. Colores fijos (no dependen del tema), como en SIGA. ---------- */
         .caja-necesito {
-            background: var(--brand-morado-tinte);
-            border-radius: 10px;
-            padding: 12px 14px;
-            font-size: 13px;
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1px dashed #3b82f6;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            color: #1e3a8a;
         }
 
         .caja-necesito__titulo {
-            font-weight: 600;
-            color: var(--brand-morado);
-            margin: 0 0 6px;
-        }
-
-        .caja-necesito__valor {
+            font-size: 0.75rem;
             font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 8px;
         }
 
         .caja-necesito__fila {
@@ -588,29 +592,69 @@
             justify-content: space-between;
             align-items: center;
             gap: 10px;
-            padding: 6px 0;
-            border-bottom: 1px dotted color-mix(in srgb, var(--brand-morado) 30%, transparent);
+            padding: 4px 0;
+            border-bottom: 1px dotted #93c5fd;
         }
 
         .caja-necesito__fila:last-of-type {
             border-bottom: none;
         }
 
-        .caja-necesito__chip {
+        .caja-necesito__etiqueta {
+            font-weight: 500;
+        }
+
+        .caja-necesito__valor {
             font-weight: 700;
-            font-size: 12px;
-            color: var(--ink);
-            background: color-mix(in srgb, var(--brand-morado) 12%, transparent);
-            border-radius: 6px;
-            padding: 3px 8px;
+            background: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #1d4ed8;
             white-space: nowrap;
+        }
+
+        .caja-necesito__ok {
+            background: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .caja-necesito__mal {
+            background: #7f1d1d;
+            color: #fff;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .caja-necesito__aviso {
+            background: #fef3c7;
+            color: #d97706;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .caja-necesito__alerta {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 8px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 500;
         }
 
         .caja-necesito__supuesto {
             margin: 8px 0 0;
-            font-size: 11px;
+            font-size: 0.68rem;
             font-style: italic;
-            color: var(--ink-soft);
+            color: #3b5ba9;
         }
 
         .aviso-sin-formula {
@@ -1056,9 +1100,10 @@
             margin-bottom: 8px;
         }
 
+        /* 4 por fila, como en SIGA: PC1 PC2 PC3 PC4 en la misma fila y luego EP, EF... */
         .meta-valores {
-            display: flex;
-            flex-wrap: wrap;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 8px;
             margin-bottom: 10px;
         }
@@ -1070,11 +1115,14 @@
             gap: 2px;
             background: #EAF2FF;
             border-radius: 8px;
-            padding: 6px 10px;
-            min-width: 52px;
+            padding: 6px 4px;
+            min-width: 0;
+            text-align: center;
         }
 
         .meta-valor span {
+            overflow-wrap: anywhere;
+            line-height: 1.2;
             font-size: 0.65rem;
             color: var(--ink-soft);
             font-weight: 600;

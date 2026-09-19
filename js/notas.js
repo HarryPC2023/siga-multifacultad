@@ -17,7 +17,7 @@
 // casilla se descarta solo (ver restaurarNotasGuardadas).
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
-import { calcularNecesito, BANDA_APROBADO } from './escenarios.js';
+import { calcularNecesito, conPendientesEnCero } from './escenarios.js';
 import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
@@ -712,15 +712,20 @@ function calcularCurso(curso) {
     const valores = valoresActualesDeCurso(curso);
     if (!formula) return { pp: null, notaFinal: null, formula: null, valores };
 
+    // Si ya rindió EP y EF el curso terminó: lo que no tiene nota cuenta 0 (igual
+    // que SIGA) y la nota final ya se puede mostrar, aunque falte alguna PC.
+    // Mientras falte un examen no se completa nada: no hay nota final todavía.
+    const { valores: paraCalcular } = conPendientesEnCero(formula.formula_practicas, formula.formula_nota_final, valores);
+
     let pp = null;
     try {
-        pp = formula.formula_practicas ? evaluarFormula(formula.formula_practicas, valores) : null;
+        pp = formula.formula_practicas ? evaluarFormula(formula.formula_practicas, paraCalcular) : null;
     } catch { pp = null; }
 
     let notaFinal = null;
     try {
         if (formula.formula_nota_final) {
-            const conSustituto = aplicarSustitutorio({ ...valores, PP: pp });
+            const conSustituto = aplicarSustitutorio({ ...paraCalcular, PP: pp });
             const notaFinalCruda = evaluarFormula(formula.formula_nota_final, conSustituto);
             notaFinal = truncarNota(notaFinalCruda);
         }
@@ -1016,44 +1021,53 @@ function etiquetaCorta(variable, etiquetas) {
     return ['EP', 'EF', 'ES'].includes(variable) ? variable : escaparHtml(etiquetas[variable] || variable);
 }
 
-function textoResultado(r, incognita) {
-    if (r.estado === 'ok') return `${incognita} mínimo = ${formatearMinimo(r.minimo)}`;
-    if (r.estado === 'seguro') return 'ya aprobarías';
-    if (r.estado === 'imposible') return `no alcanza (máx. ${r.maximoPosible})`;
-    return 'faltan datos';
+function filaCaja(etiqueta, valor) {
+    return `<div class="caja-necesito__fila"><span class="caja-necesito__etiqueta">${etiqueta}</span><span class="caja-necesito__valor">${valor}</span></div>`;
 }
 
+/* Mismos estados y textos que la caja de SIGA producción:
+   - EP y EF vacíos → sugerencias "Si sacas EP = 08: EF mínimo = X" (las 3 primeras viables)
+   - solo un examen pendiente → "Para aprobar necesitas en EF mínimo: X"
+   - EP y EF rendidos: aprueba → "¡Ya aprobaste con X!" (sin obligar a dar el ES);
+     no llega → "Nota actual" + "Con ES necesitas mínimo: Y"
+   - con el ES ya rendido → "¡Aprobaste con X!" o "Curso desaprobado con X" */
 function htmlCajaNecesito(r, etiquetas) {
-    const titulo = '<p class="caja-necesito__titulo">🎯 ¿Qué nota necesito para aprobar?</p>';
-    const valor = (x) => `<span class="caja-necesito__valor">${x}</span>`;
+    const titulo = '<div class="caja-necesito__titulo">🎯 ¿QUÉ NOTA NECESITO PARA APROBAR?</div>';
+    const nota = (x) => Number(x).toFixed(1);
+    const alerta = (texto) => `<div class="caja-necesito__alerta">${texto}</div>`;
     let cuerpo = '';
 
     switch (r.tipo) {
         case 'hipotesis':
-            cuerpo = r.filas.map((f) => `
-                <div class="caja-necesito__fila">
-                    <span>Si sacas ${f.dado.variable} = ${String(f.dado.valor).padStart(2, '0')}:</span>
-                    <span class="caja-necesito__chip">${textoResultado(f, r.incognita)}</span>
-                </div>`).join('');
+            cuerpo = r.filas.length
+                ? r.filas.map((f) => filaCaja(
+                    `Si sacas ${f.dado.variable} = ${String(f.dado.valor).padStart(2, '0')}:`,
+                    `${r.incognita} mínimo = ${formatearMinimo(f.minimo)}`)).join('')
+                : alerta('Necesitas mejorar tu Prom. PC para poder aprobar');
             break;
 
         case 'unico':
-            if (r.estado === 'ok') cuerpo = `Necesitas al menos ${valor(formatearMinimo(r.minimo))} en ${r.incognita} para aprobar.`;
-            else if (r.estado === 'seguro') cuerpo = `Con lo que tienes ya apruebas, incluso sacando 0 en ${r.incognita}.`;
-            else if (r.estado === 'imposible') cuerpo = `Ya no alcanza — con 20 en ${r.incognita} el máximo posible es ${valor(r.maximoPosible)}.`;
+            if (r.estado === 'ok') cuerpo = filaCaja(`Para aprobar necesitas en ${r.incognita} mínimo:`, formatearMinimo(r.minimo));
+            else if (r.estado === 'seguro') cuerpo = filaCaja(`¡Con cualquier nota en ${r.incognita} apruebas!`, '0+');
+            else if (r.estado === 'imposible') cuerpo = alerta('Necesitarás el sustitutorio para aprobar');
             else cuerpo = '<p class="aviso-sin-formula">Aún faltan otros datos para calcularlo.</p>';
             break;
 
         case 'sustitutorio':
-            cuerpo = `Con estos valores tu Nota Final es ${valor(r.notaFinal)}, no llega a ${UMBRAL_APROBACION}.<br>`;
-            if (r.estado === 'ok') cuerpo += `Si rindes el sustitutorio, necesitas al menos ${valor(formatearMinimo(r.minimo))} en ES.`;
-            else if (r.estado === 'imposible') cuerpo += `Ni con 20 en ES alcanzaría: el máximo posible sería ${valor(r.maximoPosible)}.`;
+            cuerpo = `<div class="caja-necesito__aviso">⚠️ Nota actual: ${nota(r.notaFinal)} (desaprobado)</div>`;
+            if (r.estado === 'ok') cuerpo += filaCaja('Con ES necesitas mínimo:', formatearMinimo(r.minimo));
+            else if (r.estado === 'seguro') cuerpo += filaCaja('¡Con cualquier nota en ES apruebas!', '0+');
+            else cuerpo += alerta('No es posible aprobar con sustitutorio');
             break;
 
         case 'completo':
-            cuerpo = r.aprueba
-                ? `Con estos valores tu Nota Final es ${valor(r.notaFinal)}.`
-                : `Con estos valores tu Nota Final es ${valor(r.notaFinal)}, no llega a ${UMBRAL_APROBACION}.`;
+            if (r.aprueba) {
+                cuerpo = `<div class="caja-necesito__ok">✅ ¡${r.conES ? 'Aprobaste' : 'Ya aprobaste'} con ${nota(r.notaFinal)}!</div>`;
+            } else if (r.conES) {
+                cuerpo = `<div class="caja-necesito__mal">❌ Curso desaprobado con ${nota(r.notaFinal)}</div>`;
+            } else {
+                cuerpo = `<div class="caja-necesito__aviso">⚠️ Nota actual: ${nota(r.notaFinal)} (desaprobado)</div>`;
+            }
             break;
 
         case 'faltan-datos':
@@ -1065,9 +1079,15 @@ function htmlCajaNecesito(r, etiquetas) {
             return '';
     }
 
-    const supuestos = r.supuestos && r.supuestos.length
-        ? `<p class="caja-necesito__supuesto">Asumiendo en ${BANDA_APROBADO} tus notas pendientes: ${r.supuestos.map((v) => etiquetaCorta(v, etiquetas)).join(', ')}.</p>`
-        : '';
+    // Se rotula lo que no tenía nota y hubo que contar: 10 si es una proyección,
+    // 0 si el curso ya terminó (EP y EF rendidos).
+    let supuestos = '';
+    if (r.supuestos && r.supuestos.length) {
+        const nombres = r.supuestos.map((v) => etiquetaCorta(v, etiquetas)).join(', ');
+        supuestos = r.relleno === 0
+            ? `<p class="caja-necesito__supuesto">Lo que aún no tiene nota cuenta como 0: ${nombres}.</p>`
+            : `<p class="caja-necesito__supuesto">Asumiendo en ${r.relleno} tus notas pendientes: ${nombres}.</p>`;
+    }
 
     return titulo + cuerpo + supuestos;
 }
