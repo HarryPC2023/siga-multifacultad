@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     usuarioActual = sesion.user;
 
     await pintarIdentidad(sesion);
+    fijarHerramientasEnMovil();
     inicializarAnalisisAcademico();
 
     await cargarDatos(usuarioActual.id);
@@ -101,6 +102,28 @@ async function pintarIdentidad(sesion) {
             ? `Periodo ${periodoConGuion(perfil.periodo_actual)}`
             : '';
     }
+}
+
+/* En celular el panel de identidad va arriba de las notas. Para que Meta, Progreso y Ruta
+   no se pierdan al hacer scroll, se deja el panel "pegado" (position: sticky en el CSS)
+   pero con un `top` negativo: la parte de arriba (foto, nombre, facultad) sale de la
+   pantalla y solo queda visible la fila de herramientas. Como el panel no cambia de
+   tamaño, no hay saltos. En escritorio el CSS ya lo pega entero y no se toca nada. */
+function fijarHerramientasEnMovil() {
+    const panel = document.getElementById('panelIdentidad');
+    const fila = panel?.querySelector('.fila-herramientas');
+    if (!panel || !fila) return;
+
+    const ajustar = () => {
+        const esEscritorio = window.matchMedia ? window.matchMedia('(min-width: 900px)').matches : true;
+        if (esEscritorio) { panel.style.top = ''; return; }
+        panel.style.top = `-${Math.max(0, fila.offsetTop - 8)}px`;
+    };
+
+    ajustar();
+    window.addEventListener('resize', ajustar);
+    // El panel crece cuando llega la facultad o cargan las fuentes: se vuelve a calcular.
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(ajustar).observe(panel);
 }
 
 /* ============================================================

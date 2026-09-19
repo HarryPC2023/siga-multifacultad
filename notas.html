@@ -1268,6 +1268,43 @@
         .meta-pf strong {
             color: var(--brand-texto);
         }
+
+        /* ============================================================
+           PANEL LATERAL QUE ACOMPAÑA EL SCROLL — las herramientas de
+           Análisis académico (Meta, Progreso, Ruta) se usan mientras se
+           miran las notas, así que no pueden irse con el scroll.
+           - Escritorio: el panel se queda pegado a la altura de la ventana
+             (antes era una columna tan alta como toda la página y su
+             contenido se iba con el scroll). Mismo ancho de siempre:
+             260px + 2×22px de padding = 304px, ahora con border-box.
+           - Celular: el panel va arriba y solo queda pegada la fila de
+             herramientas; notas.js calcula cuánto del panel esconder
+             (fijarHerramientasEnMovil). La marca "SIGA" no se muestra ahí.
+           ============================================================ */
+        @media (min-width: 900px) {
+            .panel-identidad {
+                position: sticky;
+                top: 0;
+                align-self: flex-start;
+                box-sizing: border-box;
+                width: 304px;
+                height: 100vh;
+                height: 100dvh;
+                overflow-y: auto;
+            }
+        }
+
+        @media (max-width: 899px) {
+            .panel-identidad {
+                position: sticky;
+                top: 0;
+                z-index: 40;
+            }
+
+            .panel-identidad .marca-pie {
+                display: none;
+            }
+        }
     </style>
 </head>
 
