@@ -1217,6 +1217,57 @@
         .meta-campo input {
             font-family: var(--font-heading);
         }
+
+        /* ============================================================
+           TEMAS DE SIGA (atributo data-tema del <html>; ver tema-siga.css).
+           SIGA cambia solo unas pocas variables por tema (el fondo --paper y
+           los colores de marca) y deja el texto oscuro a propósito, porque
+           casi todo vive dentro de tarjetas blancas. Dos casos necesitan
+           ayuda para leerse bien:
+           - Texto que flota directo sobre el fondo de la página (el título
+             y el mensaje de "sin cursos"): en el tema oscuro usa --hero-texto,
+             igual que el resto de SIGA.
+           - Texto CHICO de marca sobre superficies claras: el morado
+             brillante del tema oscuro (#a855f7) da solo 3.5:1 de contraste;
+             se oscurece (--brand-texto) solo en Oscuro y Forest, así Claro y
+             Ocean quedan idénticos.
+           ============================================================ */
+        :root {
+            --texto-pagina: var(--ink);
+            --texto-pagina-suave: var(--ink-soft);
+            --brand-texto: var(--brand-morado);
+        }
+
+        html[data-tema="oscuro"] {
+            --texto-pagina: var(--hero-texto, #cbc3e8);
+            --texto-pagina-suave: var(--hero-texto, #cbc3e8);
+            --brand-texto: color-mix(in srgb, var(--brand-morado) 62%, #000);
+        }
+
+        html[data-tema="forest"] {
+            --brand-texto: color-mix(in srgb, var(--brand-morado) 80%, #000);
+        }
+
+        .encabezado-notas__marca {
+            color: var(--texto-pagina);
+        }
+
+        .estado-vacio {
+            color: var(--texto-pagina-suave);
+        }
+
+        /* Código de estudiante en el panel lateral: el lavanda no alcanza
+           contraste sobre el degradado de los temas de color. */
+        html[data-tema="oscuro"] .identidad-codigo,
+        html[data-tema="ocean"] .identidad-codigo,
+        html[data-tema="forest"] .identidad-codigo {
+            color: rgba(255, 255, 255, 0.92);
+        }
+
+        .meta-valor strong,
+        .meta-pf strong {
+            color: var(--brand-texto);
+        }
     </style>
 </head>
 

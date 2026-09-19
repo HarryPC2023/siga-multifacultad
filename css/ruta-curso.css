@@ -224,11 +224,31 @@
     border-radius: 20px;
 }
 
-.rc-estado-aprobado { background: rgba(16, 185, 129, 0.16); color: #0b6e4f; }
-.rc-estado-en_curso { background: #EAF2FF; color: #3C7CF8; }
-.rc-estado-proximo { background: color-mix(in srgb, var(--brand-morado, #6600CC) 10%, #fff); color: var(--brand-morado, #6600CC); }
-.rc-estado-disponible { background: #EEF3FD; color: var(--ink, #1f2937); }
-.rc-estado-bloqueado { background: transparent; color: #6b7280; border: 1.5px dashed #cbd5e1; }
+.rc-estado-aprobado {
+    background: rgba(16, 185, 129, 0.16);
+    color: #0b6e4f;
+}
+
+.rc-estado-en_curso {
+    background: #EAF2FF;
+    color: #3C7CF8;
+}
+
+.rc-estado-proximo {
+    background: color-mix(in srgb, var(--brand-morado, #6600CC) 10%, #fff);
+    color: var(--brand-texto, var(--brand-morado, #6600CC));
+}
+
+.rc-estado-disponible {
+    background: #EEF3FD;
+    color: var(--ink, #1f2937);
+}
+
+.rc-estado-bloqueado {
+    background: transparent;
+    color: #6b7280;
+    border: 1.5px dashed #cbd5e1;
+}
 
 /* Celular: el mismo panel se vuelve hoja inferior (mismo umbral de 900px del resto de la pantalla). */
 @media (max-width: 899px) {
