@@ -10,6 +10,11 @@
 // guardada tal cual la trae la sync) — en cuanto el alumno toca un campo,
 // se pasa a mostrar el cálculo en vivo con el motor de fórmulas, porque ya
 // deja de tener sentido mostrar la oficial sobre una hipótesis.
+//
+// "Guardar" conserva en este navegador (por usuario y periodo) las notas que
+// el alumno escribió, para no volver a ponerlas cada vez. Lo oficial de
+// INTRALU siempre gana: si INTRALU cambia una casilla, lo guardado de esa
+// casilla se descarta solo (ver restaurarNotasGuardadas).
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { calcularNecesito, BANDA_APROBADO } from './escenarios.js';
@@ -35,6 +40,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await cargarDatos(usuarioActual.id);
     inicializarSelectorPeriodo();
     inicializarModalEliminarPeriodo();
+    inicializarGuardarLimpiar();
 
     const periodos = Object.keys(notasPorPeriodo).sort().reverse();
     if (!periodos.length) {
@@ -183,9 +189,148 @@ function inicializarSelectorPeriodo() {
 function seleccionarPeriodo(periodo) {
     periodoActivo = periodo;
     valoresSimulados = {};
+    restaurarNotasGuardadas(periodo);
     document.getElementById('selectorPeriodoTexto').textContent = periodo;
     document.getElementById('selectorPeriodoValor').value = periodo;
     renderizarCursos();
+}
+
+/* ============================================================
+   GUARDAR / LIMPIAR TODO
+   Lo que el alumno escribe en las casillas (sus notas probables) se
+   guarda en ESTE navegador, separado por usuario y por periodo —
+   varios alumnos comparten PC en la UNI, así que la clave lleva el id.
+
+   Regla de seguridad: LO OFICIAL SIEMPRE GANA. Cada casilla guardada
+   recuerda qué decía INTRALU en ese momento (`base`). Si al volver
+   INTRALU dice otra cosa (por ejemplo publicó la nota real), esa casilla
+   guardada se descarta sola — nunca tapa una nota oficial nueva.
+   ============================================================ */
+const CLAVE_ALMACEN_NOTAS = 'siga_mf_notas_guardadas_v1';
+
+function claveAlmacenNotas() {
+    return `${CLAVE_ALMACEN_NOTAS}_${usuarioActual?.id || 'anonimo'}`;
+}
+
+function leerAlmacenNotas() {
+    try {
+        return JSON.parse(localStorage.getItem(claveAlmacenNotas())) || {};
+    } catch {
+        return {};
+    }
+}
+
+/* Devuelve true si pudo escribir (puede fallar en modo privado o sin espacio). */
+function escribirAlmacenNotas(almacen) {
+    try {
+        if (Object.keys(almacen).length) localStorage.setItem(claveAlmacenNotas(), JSON.stringify(almacen));
+        else localStorage.removeItem(claveAlmacenNotas());
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/* Lo que INTRALU dice hoy de una casilla (null si todavía no hay dato). */
+function valorOficial(curso, variable) {
+    const valor = construirValoresFormula(curso.evaluaciones)[variable];
+    return valor === undefined ? null : valor;
+}
+
+/* Pone en `valoresSimulados` lo guardado del periodo, descartando lo que
+   INTRALU ya cambió. Llamar justo después de vaciar `valoresSimulados`. */
+function restaurarNotasGuardadas(periodo) {
+    const almacen = leerAlmacenNotas();
+    const delPeriodo = almacen[periodo];
+    if (!delPeriodo) return;
+
+    const cursos = notasPorPeriodo[periodo] || [];
+    let huboDescartes = false;
+
+    Object.keys(delPeriodo).forEach((claveCurso) => {
+        const curso = cursos.find((c) => claveSimulacion(c) === claveCurso);
+        if (!curso) { delete delPeriodo[claveCurso]; huboDescartes = true; return; }
+
+        const variables = delPeriodo[claveCurso];
+        Object.keys(variables).forEach((variable) => {
+            const guardado = variables[variable];
+            if (valorOficial(curso, variable) !== guardado.base) {
+                delete variables[variable];
+                huboDescartes = true;
+                return;
+            }
+            if (!valoresSimulados[claveCurso]) valoresSimulados[claveCurso] = {};
+            valoresSimulados[claveCurso][variable] = guardado.v;
+        });
+        if (!Object.keys(variables).length) delete delPeriodo[claveCurso];
+    });
+
+    if (!Object.keys(delPeriodo).length) delete almacen[periodo];
+    if (huboDescartes) escribirAlmacenNotas(almacen);
+}
+
+function inicializarGuardarLimpiar() {
+    document.getElementById('btnGuardarNotas').addEventListener('click', guardarNotas);
+    document.getElementById('btnLimpiarTodo').addEventListener('click', abrirModalLimpiarTodo);
+    document.getElementById('btnCancelarLimpiarTodo').addEventListener('click', cerrarModalLimpiarTodo);
+    document.getElementById('btnConfirmarLimpiarTodo').addEventListener('click', limpiarTodo);
+}
+
+function guardarNotas() {
+    if (!periodoActivo) return;
+
+    const delPeriodo = {};
+    (notasPorPeriodo[periodoActivo] || []).forEach((curso) => {
+        const claveCurso = claveSimulacion(curso);
+        const escritas = valoresSimulados[claveCurso];
+        if (!escritas) return;
+
+        const guardadas = {};
+        Object.keys(escritas).forEach((variable) => {
+            const base = valorOficial(curso, variable);
+            if (escritas[variable] === base) return; // igual a lo oficial: nada que guardar
+            guardadas[variable] = { v: escritas[variable], base };
+        });
+        if (Object.keys(guardadas).length) delPeriodo[claveCurso] = guardadas;
+    });
+
+    const almacen = leerAlmacenNotas();
+    if (Object.keys(delPeriodo).length) almacen[periodoActivo] = delPeriodo;
+    else delete almacen[periodoActivo];
+
+    const ok = escribirAlmacenNotas(almacen);
+    mostrarToast(ok ? '✅ Notas guardadas correctamente' : '⚠️ No se pudo guardar en este navegador');
+}
+
+function abrirModalLimpiarTodo() {
+    if (!periodoActivo) return;
+    document.getElementById('modalLimpiarTodo').classList.add('visible');
+}
+
+function cerrarModalLimpiarTodo() {
+    document.getElementById('modalLimpiarTodo').classList.remove('visible');
+}
+
+function limpiarTodo() {
+    cerrarModalLimpiarTodo();
+    if (!periodoActivo) return;
+
+    valoresSimulados = {};
+    const almacen = leerAlmacenNotas();
+    delete almacen[periodoActivo];
+    escribirAlmacenNotas(almacen);
+
+    renderizarCursos();
+    mostrarToast('🗑️ Notas borradas');
+}
+
+let temporizadorToast = null;
+function mostrarToast(texto) {
+    const toast = document.getElementById('toastNotas');
+    toast.textContent = texto;
+    toast.classList.add('visible');
+    clearTimeout(temporizadorToast);
+    temporizadorToast = setTimeout(() => toast.classList.remove('visible'), 2500);
 }
 
 /* ============================================================
@@ -242,6 +387,7 @@ async function confirmarEliminarPeriodo() {
     } else {
         periodoActivo = null;
         document.getElementById('listaCursos').innerHTML = '';
+        document.getElementById('accionesLista').style.display = 'none';
         document.getElementById('promedioPonderado').textContent = '--';
         document.getElementById('bannerRiesgo').classList.remove('visible');
         document.getElementById('selectorPeriodoTexto').textContent = 'Elige un periodo';
@@ -400,6 +546,8 @@ function renderizarCursos() {
     } else {
         banner.classList.remove('visible');
     }
+
+    document.getElementById('accionesLista').style.display = cursos.length ? 'flex' : 'none';
 }
 
 function toggleCurso(idx, curso) {
@@ -419,7 +567,7 @@ function toggleCurso(idx, curso) {
    que tenga labs o monografía (ver nota en formula-mapper.js). */
 function claseEvaluacion(descripcion) {
     const d = (descripcion || '').toUpperCase();
-    if (d.includes('LABORATORIO') || d.includes(' LAB')) return 'LAB';
+    if (d.includes('LABORATORIO') || /(^|[^A-Z])LAB/.test(d)) return 'LAB';
     if (d.includes('MONOGRAF')) return 'MONOGRAFIA';
     return 'PC';
 }
@@ -434,7 +582,7 @@ function etiquetaNoExamen(ev) {
     return `PC${ev.camnot ?? ''}`;
 }
 
-const ETIQUETA_EXAMEN = { EP: 'Examen Parcial', EF: 'Examen Final', ES: 'Sustitutorio' };
+const ETIQUETA_EXAMEN = { EP: 'EP', EF: 'EF', ES: 'ES' };
 const ORDEN_EXAMEN = { EP: 1, EF: 2, ES: 3 };
 
 /* Traduce el arreglo crudo de evaluaciones a filas listas para pintar:
@@ -449,11 +597,11 @@ function componentesVisibles(evaluaciones) {
         // clasificarExamen(descripcion) es la única fuente confiable.
         const variableExamen = clasificarExamen(ev.descripcion);
         if (variableExamen) {
-            filas.push({ variable: variableExamen, label: ETIQUETA_EXAMEN[variableExamen] || variableExamen, nota: notaComoNumero(ev.nota), camnot: null });
+            filas.push({ variable: variableExamen, label: ETIQUETA_EXAMEN[variableExamen] || variableExamen, nota: notaComoNumero(ev.nota), camnot: null, grupo: 'EXAMEN' });
             continue;
         }
         if (ev.camnot === null || ev.camnot === undefined) continue;
-        filas.push({ variable: `N${ev.camnot}`, label: etiquetaNoExamen(ev), nota: notaComoNumero(ev.nota), camnot: ev.camnot });
+        filas.push({ variable: `N${ev.camnot}`, label: etiquetaNoExamen(ev), nota: notaComoNumero(ev.nota), camnot: ev.camnot, grupo: claseEvaluacion(ev.descripcion) });
     }
     filas.sort((a, b) => {
         const oa = ORDEN_EXAMEN[a.variable] ?? 0, ob = ORDEN_EXAMEN[b.variable] ?? 0;
@@ -466,25 +614,43 @@ function componentesVisibles(evaluaciones) {
 function armarCuerpoCurso(cuerpo, curso, idx) {
     const filas = componentesVisibles(curso.evaluaciones);
 
-    const grid = document.createElement('div');
-    grid.className = 'grid-componentes';
-    filas.forEach((fila) => {
-        const campo = document.createElement('div');
-        campo.className = 'componente';
-        campo.innerHTML = `
-            <label>${fila.label}</label>
-            <input type="number" step="0.1" min="0" max="20" value="${fila.nota ?? ''}" placeholder="--">
-        `;
-        campo.querySelector('input').addEventListener('input', (e) => {
-            const clave = claveSimulacion(curso);
-            if (!valoresSimulados[clave]) valoresSimulados[clave] = {};
-            const v = e.target.value === '' ? null : parseFloat(e.target.value);
-            valoresSimulados[clave][fila.variable] = v;
-            actualizarCuerpoCurso(cuerpo, curso, idx);
+    // Mismo orden y columnas que SIGA producción: cada grupo en su propia
+    // fila (o filas) — PC y LAB de a 4, monografías de a 2 y los exámenes
+    // aparte — para que las etiquetas y casilleros queden alineados.
+    const GRUPOS_COMPONENTES = [
+        { id: 'PC', columnas: 4 },
+        { id: 'LAB', columnas: 4 },
+        { id: 'MONOGRAFIA', columnas: 2 },
+        { id: 'EXAMEN', columnas: 4 },
+    ];
+    GRUPOS_COMPONENTES.forEach(({ id, columnas }) => {
+        const filasGrupo = filas.filter((fila) => fila.grupo === id);
+        if (!filasGrupo.length) return;
+
+        const grid = document.createElement('div');
+        grid.className = `grid-componentes grid-componentes--${columnas}`;
+        filasGrupo.forEach((fila) => {
+            const campo = document.createElement('div');
+            campo.className = 'componente';
+            // Si el alumno escribió (o restauramos) un valor para esta casilla,
+            // manda ese; si no, la nota oficial de INTRALU.
+            const simulado = valoresSimulados[claveSimulacion(curso)] || {};
+            const valorInicial = fila.variable in simulado ? simulado[fila.variable] : fila.nota;
+            campo.innerHTML = `
+                <label>${fila.label}</label>
+                <input type="number" step="0.1" min="0" max="20" value="${valorInicial ?? ''}" placeholder="--">
+            `;
+            campo.querySelector('input').addEventListener('input', (e) => {
+                const clave = claveSimulacion(curso);
+                if (!valoresSimulados[clave]) valoresSimulados[clave] = {};
+                const v = e.target.value === '' ? null : parseFloat(e.target.value);
+                valoresSimulados[clave][fila.variable] = v;
+                actualizarCuerpoCurso(cuerpo, curso, idx);
+            });
+            grid.appendChild(campo);
         });
-        grid.appendChild(campo);
+        cuerpo.appendChild(grid);
     });
-    cuerpo.appendChild(grid);
 
     const promPC = document.createElement('p');
     promPC.className = 'prom-pc';
