@@ -11,7 +11,8 @@
 // se pasa a mostrar el cálculo en vivo con el motor de fórmulas, porque ya
 // deja de tener sentido mostrar la oficial sobre una hipótesis.
 import { supabase, obtenerSesion } from './auth-siga.js';
-import { evaluarFormula, calcularNotaMinimaNecesaria, aplicarSustitutorio, truncarNota } from './formula-engine.js';
+import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
+import { calcularNecesito, BANDA_APROBADO } from './escenarios.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
 
@@ -523,28 +524,85 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
         return;
     }
 
-    // La incógnita es el primer campo EF/ES que esté vacío en la simulación actual.
-    const incognita = ['EF', 'ES'].find((k) => k in valores && (valores[k] === null || valores[k] === undefined));
-    if (!incognita) {
-        caja.innerHTML = notaFinalCalculada !== null
-            ? `<p class="caja-necesito__titulo">🎯 Con estos valores</p>Nota Final: <span class="caja-necesito__valor">${notaFinalCalculada}</span>`
-            : '';
-        return;
-    }
-
-    const resultado = calcularNotaMinimaNecesaria({
+    const necesito = calcularNecesito({
         formulaPP: formula.formula_practicas,
         formulaFinal: formula.formula_nota_final,
-        valoresBase: valores,
-        variableIncognita: incognita,
+        valores,
         umbral: UMBRAL_APROBACION,
     });
+    const etiquetas = Object.fromEntries(componentesVisibles(curso.evaluaciones).map((f) => [f.variable, f.label]));
+    caja.innerHTML = htmlCajaNecesito(necesito, etiquetas);
+}
 
-    if (resultado.posible === null) {
-        caja.innerHTML = `<p class="caja-necesito__titulo">🎯 ¿Qué nota necesito?</p><p class="aviso-sin-formula">Aún faltan otros datos para calcularlo.</p>`;
-    } else if (resultado.posible === false) {
-        caja.innerHTML = `<p class="caja-necesito__titulo">🎯 ¿Qué nota necesito?</p>Ya no alcanza — con 20 en ${incognita} el máximo posible es <span class="caja-necesito__valor">${resultado.notaMaximaPosible}</span>.`;
-    } else {
-        caja.innerHTML = `<p class="caja-necesito__titulo">🎯 ¿Qué nota necesito?</p>Necesitas al menos <span class="caja-necesito__valor">${resultado.notaMinima}</span> en ${incognita} para aprobar.`;
+/* ---------- Caja "¿Qué nota necesito para aprobar?" ----------
+   El cálculo vive en escenarios.js (módulo puro). Acá solo se pinta. */
+
+function escaparHtml(texto) {
+    return String(texto).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* El mínimo siempre se sube a 1 decimal, nunca se baja: mostrar 7.2
+   cuando hacen falta 7.25 le haría creer al alumno que le alcanza. */
+function formatearMinimo(valor) {
+    return (Math.ceil(valor * 10 - 1e-9) / 10).toFixed(1);
+}
+
+function etiquetaCorta(variable, etiquetas) {
+    return ['EP', 'EF', 'ES'].includes(variable) ? variable : escaparHtml(etiquetas[variable] || variable);
+}
+
+function textoResultado(r, incognita) {
+    if (r.estado === 'ok') return `${incognita} mínimo = ${formatearMinimo(r.minimo)}`;
+    if (r.estado === 'seguro') return 'ya aprobarías';
+    if (r.estado === 'imposible') return `no alcanza (máx. ${r.maximoPosible})`;
+    return 'faltan datos';
+}
+
+function htmlCajaNecesito(r, etiquetas) {
+    const titulo = '<p class="caja-necesito__titulo">🎯 ¿Qué nota necesito para aprobar?</p>';
+    const valor = (x) => `<span class="caja-necesito__valor">${x}</span>`;
+    let cuerpo = '';
+
+    switch (r.tipo) {
+        case 'hipotesis':
+            cuerpo = r.filas.map((f) => `
+                <div class="caja-necesito__fila">
+                    <span>Si sacas ${f.dado.variable} = ${String(f.dado.valor).padStart(2, '0')}:</span>
+                    <span class="caja-necesito__chip">${textoResultado(f, r.incognita)}</span>
+                </div>`).join('');
+            break;
+
+        case 'unico':
+            if (r.estado === 'ok') cuerpo = `Necesitas al menos ${valor(formatearMinimo(r.minimo))} en ${r.incognita} para aprobar.`;
+            else if (r.estado === 'seguro') cuerpo = `Con lo que tienes ya apruebas, incluso sacando 0 en ${r.incognita}.`;
+            else if (r.estado === 'imposible') cuerpo = `Ya no alcanza — con 20 en ${r.incognita} el máximo posible es ${valor(r.maximoPosible)}.`;
+            else cuerpo = '<p class="aviso-sin-formula">Aún faltan otros datos para calcularlo.</p>';
+            break;
+
+        case 'sustitutorio':
+            cuerpo = `Con estos valores tu Nota Final es ${valor(r.notaFinal)}, no llega a ${UMBRAL_APROBACION}.<br>`;
+            if (r.estado === 'ok') cuerpo += `Si rindes el sustitutorio, necesitas al menos ${valor(formatearMinimo(r.minimo))} en ES.`;
+            else if (r.estado === 'imposible') cuerpo += `Ni con 20 en ES alcanzaría: el máximo posible sería ${valor(r.maximoPosible)}.`;
+            break;
+
+        case 'completo':
+            cuerpo = r.aprueba
+                ? `Con estos valores tu Nota Final es ${valor(r.notaFinal)}.`
+                : `Con estos valores tu Nota Final es ${valor(r.notaFinal)}, no llega a ${UMBRAL_APROBACION}.`;
+            break;
+
+        case 'faltan-datos':
+        case 'error':
+            cuerpo = '<p class="aviso-sin-formula">Aún faltan otros datos para calcularlo.</p>';
+            break;
+
+        default:
+            return '';
     }
+
+    const supuestos = r.supuestos && r.supuestos.length
+        ? `<p class="caja-necesito__supuesto">Asumiendo en ${BANDA_APROBADO} tus notas pendientes: ${r.supuestos.map((v) => etiquetaCorta(v, etiquetas)).join(', ')}.</p>`
+        : '';
+
+    return titulo + cuerpo + supuestos;
 }

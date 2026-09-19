@@ -161,7 +161,7 @@ function calcularNotaMinimaNecesaria({ formulaPP, formulaFinal, valoresBase, var
         const nota = notaFinalCon(mid);
         if (nota >= umbral) hi = mid; else lo = mid;
     }
-    return { posible: true, notaMinima: Math.ceil(hi * 100) / 100 };
+    return { posible: true, notaMinima: Math.ceil(hi * 100 - 1e-6) / 100 };
 }
 
 export { evaluarFormula, calcularNotaMinimaNecesaria, normalizarFormula, aplicarSustitutorio, truncarNota };
