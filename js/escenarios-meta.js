@@ -29,7 +29,7 @@ const BANDA_RESTO_ALTA = 15;                       // si con 10 no alcanza, se r
 const BANDAS_RESTO = [BANDA_APROBADO, BANDA_RESTO_ALTA];
 
 const BANDA_RESTO_MIN_ASEQUIBLE = 15;              // "Mínimo asequible": el resto rinde bien
-const TECHO_MAXIMO_EXAMEN = 18;                    // "Máximo que te podría tocar": techo realista
+export const TECHO_MAXIMO_EXAMEN = 18;                    // "Máximo que te podría tocar": techo realista
 const BANDA_OTRO_EXAMEN_PEOR_CASO = 13;            // el otro examen NO se deja en 10 (pesaría doble)
 const PATRON_PEOR_CASO_EXAMEN = [17, 10, 13, 10, 15, 10, 17, 10];
 

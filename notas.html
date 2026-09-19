@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&display=swap"
         rel="stylesheet">
 
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/tema-siga.css">
     <link rel="stylesheet" href="css/selector-personalizado.css">
@@ -477,11 +478,6 @@
             color: #2B5DB8;
         }
 
-        /* Sin ninguna nota en un periodo cerrado: gris neutro. */
-        .badge-sindatos {
-            background: #EEF0F3;
-            color: #6B7280;
-        }
 
         .btn-ingresar-notas {
             background: #e6f6f8;
@@ -831,6 +827,356 @@
             color: #fff;
             cursor: pointer;
         }
+
+        /* ============================================================
+           META DEL CURSO — panel lateral (escritorio) / hoja inferior
+           (celular). Mismo diseño que SIGA producción. El contenido va
+           en Poppins (fuente de datos) para contrastar con la fuente del
+           tema; los títulos de tarjeta conservan la del tema.
+           ============================================================ */
+        :root {
+            --font-datos: 'Poppins', 'Segoe UI', Arial, sans-serif;
+        }
+
+        .meta-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 998;
+        }
+
+        .meta-overlay.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .meta-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            height: 100%;
+            width: 380px;
+            max-width: 92vw;
+            background: #fff;
+            border-left: 4px solid var(--brand-morado);
+            box-shadow: -8px 0 24px rgba(0, 0, 0, 0.14);
+            transform: translateX(100%);
+            transition: transform 0.25s ease;
+            z-index: 999;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: var(--font-datos);
+        }
+
+        .meta-panel.abierto {
+            transform: translateX(0);
+        }
+
+        .meta-panel__cabecera {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 18px;
+            border-bottom: 1px solid #e5e7eb;
+            flex-shrink: 0;
+        }
+
+        .meta-panel__titulo-grupo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .meta-panel__icono {
+            font-size: 1.3rem;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--brand-morado) 10%, transparent);
+        }
+
+        .meta-panel__titulo {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--ink);
+        }
+
+        .meta-panel__subtitulo {
+            font-size: 0.78rem;
+            color: var(--ink-soft);
+            margin-top: 2px;
+        }
+
+        .meta-panel__cerrar {
+            background: none;
+            border: none;
+            font-size: 1.1rem;
+            color: var(--ink-soft);
+            cursor: pointer;
+            line-height: 1;
+            padding: 6px;
+        }
+
+        .meta-panel__cuerpo {
+            padding: 16px 18px 28px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .meta-campo {
+            margin-bottom: 14px;
+        }
+
+        .meta-campo label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--ink-soft);
+            margin-bottom: 6px;
+        }
+
+        .meta-campo input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            background: #EAF2FF;
+            color: var(--ink);
+            font-family: var(--font-datos);
+            font-size: 0.9rem;
+        }
+
+        #metaCursoTexto,
+        #metaCursoLista li {
+            font-family: var(--font-datos);
+        }
+
+        .meta-vacio {
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        .meta-completo {
+            padding: 12px 14px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            margin-bottom: 14px;
+        }
+
+        .meta-completo.ok {
+            background: rgba(16, 185, 129, 0.12);
+            color: #0b7a58;
+        }
+
+        .meta-completo.no {
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+        }
+
+        .meta-inalcanzable {
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+
+        .meta-tarjeta {
+            background: #fff;
+            border: 1px solid #FFC000;
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Tarjetas alternadas lila / champagne, como en SIGA. */
+        #metaResultado>.meta-tarjeta:nth-of-type(odd) {
+            background: rgba(102, 0, 204, 0.05);
+            border-color: #680ECD;
+        }
+
+        .meta-tarjeta__nombre {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 0.88rem;
+            color: var(--ink);
+            margin-bottom: 4px;
+        }
+
+        .meta-desc {
+            font-size: 0.76rem;
+            color: var(--ink-soft);
+            line-height: 1.5;
+            margin: 0 0 10px;
+        }
+
+        .meta-subtitulo {
+            font-size: 0.74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--ink-soft);
+            margin: 10px 0 6px;
+        }
+
+        .meta-subtitulo:first-of-type {
+            margin-top: 0;
+        }
+
+        .meta-alternativa {
+            padding-top: 10px;
+            margin-top: 10px;
+            border-top: 1px dashed #d1d5db;
+        }
+
+        .meta-alternativa:first-of-type {
+            padding-top: 0;
+            margin-top: 0;
+            border-top: none;
+        }
+
+        .meta-alternativa__titulo {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 8px;
+        }
+
+        .meta-valores {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .meta-valor {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+            background: #EAF2FF;
+            border-radius: 8px;
+            padding: 6px 10px;
+            min-width: 52px;
+        }
+
+        .meta-valor span {
+            font-size: 0.65rem;
+            color: var(--ink-soft);
+            font-weight: 600;
+        }
+
+        .meta-valor strong {
+            font-size: 0.95rem;
+            color: var(--brand-morado);
+        }
+
+        /* Nota que el alumno YA tiene: atenuada y con check. */
+        .meta-valor--actual {
+            background: transparent;
+            border: 1px dashed #d1d5db;
+            opacity: 0.75;
+        }
+
+        .meta-valor--actual span {
+            color: #10b981;
+        }
+
+        .meta-valor--actual strong {
+            color: var(--ink-soft);
+        }
+
+        .meta-pf {
+            font-size: 0.8rem;
+            color: var(--ink);
+            border-top: 1px solid #e5e7eb;
+            padding-top: 8px;
+        }
+
+        .meta-pf strong {
+            color: var(--brand-morado);
+        }
+
+        .meta-sin-pendientes {
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(16, 185, 129, 0.12);
+            color: #0b7a58;
+            font-size: 0.82rem;
+            line-height: 1.5;
+        }
+
+        .meta-nota-banda {
+            font-size: 0.72rem;
+            color: var(--ink-soft);
+            line-height: 1.5;
+            background: #EAF2FF;
+            border-radius: 8px;
+            padding: 6px 10px;
+            margin: 0 0 8px;
+        }
+
+        .meta-no-disponible {
+            font-size: 0.82rem;
+            color: var(--ink-soft);
+            line-height: 1.6;
+            font-style: italic;
+            margin: 0;
+        }
+
+        /* Celular: el mismo panel se vuelve hoja inferior (mismo umbral de
+           900px que el resto de la pantalla). */
+        @media (max-width: 899px) {
+            .meta-panel {
+                top: auto;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                width: 100%;
+                max-width: 100%;
+                height: auto;
+                max-height: 82vh;
+                border-radius: 14px 14px 0 0;
+                border-left: none;
+                border-top: 4px solid var(--brand-morado);
+                transform: translateY(100%);
+                box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+            }
+
+            .meta-panel.abierto {
+                transform: translateY(0);
+            }
+        }
+
+        /* ============================================================
+           FUENTE DE DATOS — todas las notas y promedios van en Poppins
+           (legible, con ceros normales) para contrastar con la fuente del
+           tema. Va al final para ganar sobre las reglas anteriores.
+           ============================================================ */
+        .componente label,
+        .componente input,
+        .prom-pc,
+        .caja-necesito,
+        .curso-card__promedio-etiqueta,
+        .curso-card__promedio-valor,
+        .card-promedio__valor,
+        .banner-riesgo__item {
+            font-family: var(--font-datos);
+        }
     </style>
 </head>
 
@@ -952,10 +1298,24 @@
 
     <div class="toast-notas" id="toastNotas" role="status" aria-live="polite"></div>
 
-    <!-- Panel de Análisis Académico — hoy muestra un estado honesto de
-         "en camino" para las 3 herramientas: el motor real (Meta del
-         curso, Progreso de tu carrera, Ruta del Curso) vive en
-         producción SIGA y todavía no se portó a este sandbox. -->
+    <!-- Meta del curso: panel lateral (escritorio) / hoja inferior (celular). -->
+    <div id="metaOverlay" class="meta-overlay"></div>
+    <aside id="metaPanel" class="meta-panel" aria-hidden="true" aria-label="Meta del curso">
+        <div class="meta-panel__cabecera">
+            <div class="meta-panel__titulo-grupo">
+                <span class="meta-panel__icono">📊</span>
+                <div>
+                    <div class="meta-panel__titulo">Análisis académico</div>
+                    <div class="meta-panel__subtitulo">🎯 Meta del curso</div>
+                </div>
+            </div>
+            <button type="button" class="meta-panel__cerrar" id="metaCerrar" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="meta-panel__cuerpo" id="metaCuerpo"></div>
+    </aside>
+
+    <!-- Aviso de "en camino" para Progreso de tu carrera y Ruta del Curso:
+         su motor vive en producción SIGA y todavía no se portó a este sandbox. -->
     <div id="aaOverlay" class="aa-overlay">
         <div class="aa-caja">
             <div class="aa-caja__icono" id="aaIcono">🚧</div>

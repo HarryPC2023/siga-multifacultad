@@ -18,6 +18,7 @@
 import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { calcularNecesito, BANDA_APROBADO } from './escenarios.js';
+import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
 
@@ -95,20 +96,15 @@ async function pintarIdentidad(sesion) {
 }
 
 /* ============================================================
-   ANÁLISIS ACADÉMICO — 🚧 EN CAMINO en este sandbox.
-   El motor real de estas 3 herramientas (Meta del curso, Progreso de
-   tu carrera, Ruta del Curso) vive hoy solo en producción SIGA
-   (intranotas.js + progreso-malla.js: calcularPFCompleto(), el grafo
-   de prerrequisitos, etc.) — portarlo es trabajo aparte, todavía no
-   hecho acá. Mientras tanto, cada chip abre un aviso honesto en vez
-   de fingir un cálculo que no existe.
+   ANÁLISIS ACADÉMICO
+   - Meta del curso: YA FUNCIONA en este sandbox (panel lateral, más
+     abajo), calculada con las fórmulas de INTRALU.
+   - Progreso de tu carrera y Ruta del Curso: 🚧 todavía en camino.
+     Su motor vive hoy solo en producción SIGA (progreso-malla.js, el
+     grafo de prerrequisitos); mientras tanto su chip abre un aviso
+     honesto en vez de fingir un cálculo que no existe.
    ============================================================ */
 const AA_INFO = {
-    meta: {
-        icono: '🎯',
-        titulo: 'Meta del curso',
-        desc: 'Calcula qué nota necesitas en lo que falta de un curso para alcanzar tu meta. Ya funciona en producción SIGA — se está portando a este sandbox.',
-    },
     progreso: {
         icono: '🗺️',
         titulo: 'Progreso de tu carrera',
@@ -123,8 +119,12 @@ const AA_INFO = {
 
 function inicializarAnalisisAcademico() {
     document.querySelectorAll('.chip-herramienta').forEach((chip) => {
-        chip.addEventListener('click', () => abrirAvisoAnalisisAcademico(chip.dataset.aa));
+        chip.addEventListener('click', () => {
+            if (chip.dataset.aa === 'meta') abrirMetaCurso();
+            else abrirAvisoAnalisisAcademico(chip.dataset.aa);
+        });
     });
+    inicializarMetaCurso();
     document.getElementById('aaCerrar').addEventListener('click', cerrarAvisoAnalisisAcademico);
     document.getElementById('aaOverlay').addEventListener('click', (e) => {
         if (e.target.id === 'aaOverlay') cerrarAvisoAnalisisAcademico();
@@ -193,6 +193,294 @@ function seleccionarPeriodo(periodo) {
     document.getElementById('selectorPeriodoTexto').textContent = periodo;
     document.getElementById('selectorPeriodoValor').value = periodo;
     renderizarCursos();
+}
+
+/* ============================================================
+   META DEL CURSO — panel lateral (escritorio) / hoja inferior (celular),
+   con el mismo diseño y textos que en SIGA producción.
+   El cálculo vive en escenarios-meta.js (módulo puro, sobre las fórmulas
+   de INTRALU); acá solo se arma el panel y se pinta el resultado. Usa lo
+   que el alumno ve en pantalla: notas de INTRALU + las que escribió.
+   ============================================================ */
+let metaCursoClave = null;    // `codigo|seccion` del curso elegido en el panel
+let metaValorTexto = '14';    // lo último que escribió el alumno (14 por defecto, como en SIGA)
+
+function nombreCursoMeta(curso) {
+    return (curso.nombre_curso || curso.codigo_curso || '').replace(/-+\s*$/, '').trim();
+}
+
+function inicializarMetaCurso() {
+    document.getElementById('metaCerrar').addEventListener('click', cerrarMetaCurso);
+    document.getElementById('metaOverlay').addEventListener('click', cerrarMetaCurso);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrarMetaCurso(); });
+}
+
+function abrirMetaCurso() {
+    const cuerpo = document.getElementById('metaCuerpo');
+    const cursos = [...(notasPorPeriodo[periodoActivo] || [])]
+        .sort((a, b) => nombreCursoMeta(a).localeCompare(nombreCursoMeta(b), 'es'));
+
+    if (!cursos.length) {
+        cuerpo.innerHTML = '<p class="meta-vacio">Sincroniza un periodo para poder usar Meta del curso.</p>';
+    } else {
+        if (!cursos.some((c) => claveSimulacion(c) === metaCursoClave)) metaCursoClave = claveSimulacion(cursos[0]);
+        // El cuerpo se rearma cada vez que se abre, así el selector se inicializa
+        // sobre elementos nuevos (mismo criterio que producción).
+        cuerpo.innerHTML = `
+            <div class="meta-campo">
+                <label for="metaCursoTrigger">Curso</label>
+                <div class="campo-select-custom" style="width:100%;">
+                    <button type="button" class="select-custom-trigger" id="metaCursoTrigger"
+                        aria-haspopup="listbox" aria-expanded="false">
+                        <span id="metaCursoTexto"></span>
+                        <span class="select-custom-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    <ul class="select-custom-lista" id="metaCursoLista" role="listbox" hidden></ul>
+                    <input type="hidden" id="metaCursoValor">
+                </div>
+            </div>
+            <div class="meta-campo">
+                <label for="metaInput">¿Cuál es tu meta y cómo podrías alcanzarla?</label>
+                <input type="number" id="metaInput" min="0" max="20" step="1" value="${escaparHtml(metaValorTexto)}">
+            </div>
+            <div id="metaResultado"></div>`;
+
+        const cursoActual = cursos.find((c) => claveSimulacion(c) === metaCursoClave);
+        inicializarSelectPersonalizado({
+            triggerId: 'metaCursoTrigger', textoId: 'metaCursoTexto',
+            listaId: 'metaCursoLista', valorId: 'metaCursoValor',
+            opciones: cursos.map((c) => ({ value: claveSimulacion(c), label: escaparHtml(nombreCursoMeta(c)) })),
+            alElegir: (valor) => { metaCursoClave = valor; refrescarMeta(); },
+        })?.establecer(metaCursoClave, nombreCursoMeta(cursoActual));
+
+        document.getElementById('metaInput').addEventListener('input', (e) => {
+            metaValorTexto = e.target.value;
+            refrescarMeta();
+        });
+        refrescarMeta();
+    }
+
+    document.getElementById('metaOverlay').classList.add('visible');
+    const panel = document.getElementById('metaPanel');
+    panel.classList.add('abierto');
+    panel.setAttribute('aria-hidden', 'false');
+}
+
+function cerrarMetaCurso() {
+    document.getElementById('metaOverlay').classList.remove('visible');
+    const panel = document.getElementById('metaPanel');
+    panel.classList.remove('abierto');
+    panel.setAttribute('aria-hidden', 'true');
+}
+
+function refrescarMeta() {
+    const cont = document.getElementById('metaResultado');
+    if (!cont) return;
+
+    const curso = (notasPorPeriodo[periodoActivo] || []).find((c) => claveSimulacion(c) === metaCursoClave);
+    if (!curso) { cont.innerHTML = ''; return; }
+
+    const meta = parseFloat(document.getElementById('metaInput').value);
+    if (Number.isNaN(meta)) {
+        cont.innerHTML = '<p class="meta-vacio">Escribe tu meta (por ejemplo 14) para ver cómo alcanzarla.</p>';
+        return;
+    }
+    if (meta < 0 || meta > 20) {
+        cont.innerHTML = '<div class="meta-inalcanzable">⚠️ Tu meta tiene que estar entre 0 y 20.</div>';
+        return;
+    }
+
+    const formula = formulaDeCurso(curso);
+    const grupos = {};
+    const etiquetas = {};
+    componentesVisibles(curso.evaluaciones).forEach((fila) => {
+        grupos[fila.variable] = fila.grupo;
+        etiquetas[fila.variable] = fila.label;
+    });
+
+    const resultado = generarEscenariosMeta({
+        formulaPP: formula?.formula_practicas,
+        formulaFinal: formula?.formula_nota_final,
+        valores: valoresActualesDeCurso(curso),
+        grupos,
+        meta,
+    });
+    cont.innerHTML = htmlResultadoMeta(resultado, etiquetas);
+}
+
+/* ---------- Render (mismos textos que producción) ---------- */
+
+function etiquetaMeta(variable, etiquetas) {
+    if (['EP', 'EF', 'ES'].includes(variable)) return variable;
+    if (etiquetas[variable]) return escaparHtml(etiquetas[variable]);
+    const numero = variable.match(/^N(\d+)$/);
+    return numero ? `PC${numero[1]}` : escaparHtml(variable);
+}
+
+function htmlValoresMeta(entradas, proyectados, etiquetas) {
+    const yaCargadas = (entradas || []).map(({ variable, valor }) => `
+        <div class="meta-valor meta-valor--actual" title="Ya la tienes cargada"><span>${etiquetaMeta(variable, etiquetas)} ✓</span><strong>${valor}</strong></div>`).join('');
+    const proyectadas = Object.entries(proyectados || {}).map(([variable, valor]) => `
+        <div class="meta-valor"><span>${etiquetaMeta(variable, etiquetas)}</span><strong>${valor}</strong></div>`).join('');
+    return `<div class="meta-valores">${yaCargadas}${proyectadas}</div>`;
+}
+
+/* Solo se aclara cuando hizo falta asumir que el resto rinde bien (~15):
+   con la banda conservadora (10) es el caso normal y no hay que decir más. */
+function htmlNotaBandaMeta(alternativa, nombreFoco) {
+    if (!alternativa || !alternativa.bandaAsumida) return '';
+    return `<p class="meta-nota-banda">📌 Esto asume que tus otras evaluaciones (fuera de ${nombreFoco}) también tienen buen desempeño — la meta no depende solo de ${nombreFoco}, sino del conjunto del curso.</p>`;
+}
+
+function htmlAlternativaMeta(titulo, alternativa, entradas, nombreFoco, etiquetas) {
+    return `
+        <div class="meta-alternativa">
+            <div class="meta-alternativa__titulo">${titulo}</div>
+            ${htmlNotaBandaMeta(alternativa, nombreFoco)}
+            ${htmlValoresMeta(entradas, alternativa.valores, etiquetas)}
+            <div class="meta-pf">PF resultante: <strong>${alternativa.notaFinal.toFixed(1)}</strong></div>
+        </div>`;
+}
+
+function htmlSeccionTipoMeta(r, nombreFoco, etiquetas) {
+    if (r.sinPendientes) {
+        return `<div class="meta-sin-pendientes">Ya tienes todas tus notas de ${nombreFoco} cargadas ✅</div>`;
+    }
+    if (!r.alta && !r.mixta) {
+        return `<div class="meta-inalcanzable">⚠️ Ni siquiera asumiendo que el resto de tu curso rinde bien, esta meta es alcanzable solo con ${nombreFoco} (necesitarías más de 20).</div>`;
+    }
+    let html = '';
+    if (r.alta) html += htmlAlternativaMeta('Alternativa alta', r.alta, r.entradas, nombreFoco, etiquetas);
+    if (r.mixta) html += htmlAlternativaMeta('Alternativa mixta', r.mixta, r.entradas, nombreFoco, etiquetas);
+    return html;
+}
+
+function htmlSustiMeta(s) {
+    const actual = s.notaActual !== null ? s.notaActual.toFixed(1) : '—';
+
+    if (s.yaAlcanzaMeta) {
+        const conVeinte = s.notaConVeinte !== null
+            ? ` Si igual quieres tomarlo para subir tu promedio: con un 20 en el susti (reemplazando tu nota más baja entre EP y EF) tu PF subiría a <strong>${s.notaConVeinte.toFixed(1)}</strong>.`
+            : '';
+        return `
+            <div class="meta-tarjeta">
+                <div class="meta-tarjeta__nombre">${s.nombre}</div>
+                <div class="meta-sin-pendientes">Ya alcanzas tu meta con ${actual}, no necesitas el susti para esto ✅</div>
+                <p class="meta-desc">${conVeinte}</p>
+            </div>`;
+    }
+
+    const cuerpo = !s.resultado
+        ? '<div class="meta-inalcanzable">⚠️ Ni con un 20 en el sustitutorio alcanzarías esta meta.</div>'
+        : `
+            <div class="meta-valores"><div class="meta-valor"><span>Susti</span><strong>${s.resultado.es}</strong></div></div>
+            <div class="meta-pf">PF resultante: <strong>${s.resultado.notaFinal.toFixed(1)}</strong></div>`;
+    return `
+        <div class="meta-tarjeta">
+            <div class="meta-tarjeta__nombre">${s.nombre}</div>
+            <p class="meta-desc">Tu nota actual es ${actual}. Si tu curso todavía permite el sustitutorio, esto es lo que necesitarías para llegar a tu meta — reemplaza tu nota más baja entre EP y EF.</p>
+            ${cuerpo}
+        </div>`;
+}
+
+function htmlExamenMeta(s) {
+    const minimo = s.minimo
+        ? `
+            <div class="meta-alternativa">
+                <div class="meta-alternativa__titulo">Mínimo asequible</div>
+                <p class="meta-desc">Si tu PC, LAB, Monografías y tu otro examen rinden bien.</p>
+                <div class="meta-valores"><div class="meta-valor"><span>${s.foco}</span><strong>${s.minimo.valores[s.foco]}</strong></div></div>
+                <div class="meta-pf">PF resultante: <strong>${s.minimo.notaFinal.toFixed(1)}</strong></div>
+            </div>`
+        : `
+            <div class="meta-alternativa">
+                <div class="meta-alternativa__titulo">Mínimo asequible</div>
+                <div class="meta-inalcanzable">⚠️ Ni siquiera con todo lo demás rindiendo muy bien alcanzarías esta meta.</div>
+            </div>`;
+    const maximo = s.maximo
+        ? `
+            <div class="meta-alternativa">
+                <div class="meta-alternativa__titulo">Máximo que te podría tocar</div>
+                <p class="meta-desc">Si el resto de tu curso se queda solo en lo mínimo para pasar.</p>
+                <div class="meta-valores"><div class="meta-valor"><span>${s.foco}</span><strong>${s.maximo.valor}</strong></div></div>
+                <div class="meta-pf">PF resultante: <strong>${s.maximo.notaFinal.toFixed(1)}</strong></div>
+            </div>`
+        : `
+            <div class="meta-alternativa">
+                <div class="meta-alternativa__titulo">Máximo que te podría tocar</div>
+                <div class="meta-inalcanzable">⚠️ Si el resto de tu curso se queda solo en lo mínimo, no alcanzarías esta meta ni con ${TECHO_MAXIMO_EXAMEN} en tu ${s.foco} — tus PC/LAB/Monografías también van a necesitar mejorar.</div>
+            </div>`;
+    return `
+        <div class="meta-tarjeta">
+            <div class="meta-tarjeta__nombre">${s.nombre}</div>
+            ${minimo}
+            ${maximo}
+        </div>`;
+}
+
+function htmlLabMonoMeta(s, etiquetas) {
+    if (s.noDisponible) {
+        return `
+            <div class="meta-tarjeta">
+                <div class="meta-tarjeta__nombre">${s.nombre}</div>
+                <p class="meta-no-disponible">Este curso no maneja Laboratorios ni Monografías, así que esta sección no aplica acá.</p>
+            </div>`;
+    }
+    let contenido = '';
+    if (s.lab) {
+        contenido += `<div class="meta-subtitulo">Laboratorios (LAB)</div>${htmlSeccionTipoMeta(s.lab, 'LAB', etiquetas)}`;
+    }
+    if (s.mono) {
+        contenido += '<div class="meta-subtitulo">Monografías</div>';
+        if (s.mono.sinPendientes) {
+            contenido += '<div class="meta-sin-pendientes">Ya tienes tus Monografías cargadas ✅</div>';
+        } else if (!s.mono.alta) {
+            contenido += '<div class="meta-inalcanzable">⚠️ Ni siquiera asumiendo que el resto de tu curso rinde bien, esta meta es alcanzable solo con Monografías.</div>';
+        } else {
+            contenido += `
+                <p class="meta-desc">Referencial — la nota real depende bastante del criterio del profesor y si es grupal o individual.</p>
+                ${htmlNotaBandaMeta(s.mono.alta, 'Monografías')}
+                ${htmlValoresMeta(s.mono.entradas, s.mono.alta.valores, etiquetas)}
+                <div class="meta-pf">PF resultante: <strong>${s.mono.alta.notaFinal.toFixed(1)}</strong></div>`;
+        }
+    }
+    return `
+        <div class="meta-tarjeta">
+            <div class="meta-tarjeta__nombre">${s.nombre}</div>
+            ${contenido}
+        </div>`;
+}
+
+function htmlResultadoMeta(r, etiquetas) {
+    if (r.tipo === 'sin-formula') {
+        return '<p class="meta-vacio">INTRALU todavía no publica la fórmula de este curso. En cuanto la publique y vuelvas a sincronizar, aquí aparece tu meta.</p>';
+    }
+    if (r.tipo === 'error') {
+        return '<div class="meta-inalcanzable">⚠️ No se pudo interpretar la fórmula de este curso.</div>';
+    }
+    if (r.tipo === 'completo') {
+        const bloque = r.notaFinal === null ? '' : `
+            <div class="meta-completo ${r.alcanzaMeta ? 'ok' : 'no'}">
+                Ya tienes todas tus notas: tu PF es <strong>${r.notaFinal.toFixed(1)}</strong>.
+                ${r.alcanzaMeta ? ' ✅ ¡Alcanzaste tu meta!' : ' ❌ No llegaste a la meta con estas notas.'}
+            </div>`;
+        return bloque + (r.seccionSusti ? htmlSustiMeta(r.seccionSusti) : '');
+    }
+
+    return r.secciones.map((s) => {
+        if (s.id === 'pc') {
+            return `
+                <div class="meta-tarjeta">
+                    <div class="meta-tarjeta__nombre">${s.nombre}</div>
+                    <p class="meta-desc">${s.descripcion}</p>
+                    ${htmlSeccionTipoMeta(s, 'PC', etiquetas)}
+                </div>`;
+        }
+        if (s.id === 'labmono') return htmlLabMonoMeta(s, etiquetas);
+        if (s.id === 'examen-EP' || s.id === 'examen-EF') return htmlExamenMeta(s);
+        if (s.id === 'susti') return htmlSustiMeta(s);
+        return '';
+    }).join('');
 }
 
 /* ============================================================
@@ -449,9 +737,9 @@ function notaFinalMostrada(curso, notaFinalCalculada) {
     return curso.promedio_final ?? notaFinalCalculada;
 }
 
-/* Un periodo pasado NUNCA debería quedar con notas a medias — si eso
-   pasa, es señal de un problema de sync, no de que "todavía no suben
-   notas". Solo el periodo actual puede estar legítimamente incompleto.
+/* Un periodo cerrado sí puede quedar con notas a medias: hay profesores
+   que no publican todo (o publican el EF tarde). Eso NO es un error del
+   alumno ni una alarma; se muestra como "En proceso" (ver estadoCurso).
    Reglas de cierre real de UNI: el periodo 1 (marzo-julio) cierra fin de
    julio; el periodo 2 (agosto-diciembre) cierra fin de diciembre. */
 function periodoEstaAbierto(periodoConGuion) {
@@ -470,11 +758,22 @@ function periodoEstaAbierto(periodoConGuion) {
     return true; // verano (tipo 3): caso borde, no lo bloqueamos por ahora
 }
 
-function estadoCurso(notaFinal, periodoConGuion) {
+/* ¿El curso ya tiene al menos una nota? (de INTRALU o escrita por el alumno) */
+function hayAlgunaNota(curso) {
+    const valores = valoresActualesDeCurso(curso);
+    if (Object.values(valores).some((v) => v !== null && v !== undefined)) return true;
+    return notaComoNumero(curso.promedio_practicas) !== null;
+}
+
+/* Sin nota final todavía (`notaFinal === null`) NUNCA es rojo ni "Sin datos":
+     - con alguna nota ya publicada → "En proceso" (azul suave)
+     - sin ninguna nota → "Pendiente" (amarillo): espera a que el profesor publique
+   El rojo queda solo para desaprobado / crítico. */
+function estadoCurso(notaFinal, periodoConGuion, hayNotas = false) {
     if (notaFinal === null) {
-        return periodoEstaAbierto(periodoConGuion)
-            ? { texto: 'Pendiente', clase: 'badge-pendiente' }
-            : { texto: 'Sin datos', clase: 'badge-critico' };
+        return hayNotas
+            ? { texto: 'En proceso', clase: 'badge-proceso' }
+            : { texto: 'Pendiente', clase: 'badge-pendiente' };
     }
 
     // Ciclo ya cerrado: la respuesta es definitiva, no hay "en riesgo"
@@ -500,7 +799,7 @@ function renderizarCursos() {
     cursos.forEach((curso, idx) => {
         const { notaFinal: notaFinalCalculada } = calcularCurso(curso);
         const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
-        const estado = estadoCurso(notaFinal, periodoActivo);
+        const estado = estadoCurso(notaFinal, periodoActivo, hayAlgunaNota(curso));
         const creditos = formulaDeCurso(curso)?.creditos ?? null;
 
         if (notaFinal !== null && creditos) {
@@ -677,7 +976,7 @@ function actualizarCuerpoCurso(cuerpo, curso, idx) {
     if (valorHeader) valorHeader.textContent = notaFinal ?? '--';
     const badge = tarjeta?.querySelector('.curso-card__meta-fila .badge:last-child');
     if (badge) {
-        const estado = estadoCurso(notaFinal, periodoActivo);
+        const estado = estadoCurso(notaFinal, periodoActivo, hayAlgunaNota(curso));
         badge.textContent = estado.texto;
         badge.className = `badge ${estado.clase}`;
     }
