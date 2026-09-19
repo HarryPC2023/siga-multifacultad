@@ -334,62 +334,100 @@
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 14px;
+                align-items: start;
             }
         }
 
         .curso-card {
-            border: 1px solid #e8e3da;
-            border-radius: 12px;
-            padding: 14px;
             background: #fff;
-            display: flex;
-            gap: 12px;
+            border-radius: 12px;
+            box-shadow: var(--sombra-tarjeta, 0 2px 10px rgba(0, 0, 0, 0.08));
+            padding: 14px 16px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            column-gap: 12px;
+            align-items: start;
         }
 
         .curso-card__promedio {
-            background: #EAF5C0;
-            border-radius: 10px;
-            padding: 8px 10px;
+            grid-column: 2;
+            grid-row: 1 / span 3;
+            align-self: start;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 8px 12px;
+            min-width: 85px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-width: 58px;
-            flex-shrink: 0;
+            text-align: center;
         }
 
         .curso-card__promedio-etiqueta {
-            font-size: 8px;
-            color: #6B7F00;
-            font-weight: 700;
-            letter-spacing: .3px;
-            margin: 0;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: lowercase;
+            color: var(--ink-soft);
+            line-height: 1.2;
+            margin: 0 0 2px;
+        }
+
+        .curso-card__promedio-etiqueta::first-letter {
+            text-transform: uppercase;
         }
 
         .curso-card__promedio-valor {
             font-family: var(--font-body);
             font-weight: 700;
-            font-size: 16px;
-            color: #6B7F00;
+            font-size: 1.25rem;
+            color: #d1d5db;
             margin: 0;
         }
 
+        /* El color del promedio sigue al estado del curso (el badge se
+           actualiza en vivo al simular, y :has() lo sigue solo). */
+        .curso-card:has(.badge-aprobado) .curso-card__promedio-valor {
+            color: #1E88E5;
+        }
+
+        .curso-card:has(.badge-riesgo) .curso-card__promedio-valor {
+            color: #D97706;
+        }
+
+        .curso-card:has(.badge-critico) .curso-card__promedio-valor {
+            color: #EF4444;
+        }
+
+        /* Sus hijos (nombre, fila de códigos, botón y cuerpo) pasan a ser
+           celdas de la grilla de .curso-card. Así el promedio queda arriba
+           a la derecha con su tamaño natural, y el cuerpo desplegable ocupa
+           todo el ancho debajo sin estirar nada (mismo esquema que SIGA). */
         .curso-card__cuerpo-principal {
-            flex-grow: 1;
-            min-width: 0;
+            display: contents;
+        }
+
+        .curso-card__cuerpo-principal>.btn-ingresar-notas {
+            grid-column: 1;
+            justify-self: start;
         }
 
         .curso-card__nombre {
+            grid-column: 1;
             font-weight: 600;
-            font-size: 13px;
-            margin: 0 0 6px;
+            font-size: 1rem;
+            line-height: 1.3;
+            margin: 0 0 4px;
         }
 
         .curso-card__meta-fila {
+            grid-column: 1;
             display: flex;
             align-items: center;
             gap: 6px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             flex-wrap: wrap;
         }
 
@@ -445,11 +483,15 @@
 
         .curso-card__cuerpo {
             display: none;
-            margin-top: 14px;
+            grid-column: 1 / -1;
         }
 
         .curso-card__cuerpo.visible {
             display: block;
+            margin: 14px -16px -14px;
+            padding: 16px;
+            background: #EEF3FD;
+            border-top: 1px solid #e0e7ef;
         }
 
         .grid-componentes {
@@ -480,6 +522,8 @@
             border: 1px solid rgba(0, 0, 0, 0.15);
             background: #fff;
             width: 100%;
+            max-width: 64px;
+            margin: 0 auto;
             box-sizing: border-box;
         }
 
