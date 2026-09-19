@@ -10,7 +10,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Orbitron:wght@400;500;700&display=swap"
         rel="stylesheet">
 
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="css/variables.css">
     <link rel="stylesheet" href="css/tema-siga.css">
     <link rel="stylesheet" href="css/selector-personalizado.css">
@@ -20,7 +22,7 @@
         body {
             margin: 0;
             background: var(--paper);
-            font-family: var(--font-body);
+            font-family: var(--font-datos);
             color: var(--ink);
         }
 
@@ -508,6 +510,28 @@
             grid-column: 1 / -1;
         }
 
+        .curso-card__acciones {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
+
+        .btn-limpiar-curso {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 4px 10px;
+            background: #fee2e2;
+            color: #dc2626;
+            border: 1px solid #fca5a5;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .btn-limpiar-curso:hover {
+            background: #fecaca;
+        }
+
         .curso-card__cuerpo.visible {
             display: block;
             margin: 14px -16px -14px;
@@ -881,6 +905,7 @@
            ============================================================ */
         :root {
             --font-datos: 'Poppins', 'Segoe UI', Arial, sans-serif;
+            --font-valor: 'Montserrat', 'Poppins', 'Segoe UI', Arial, sans-serif;
         }
 
         .meta-overlay {
@@ -1212,19 +1237,45 @@
         }
 
         /* ============================================================
-           FUENTE DE DATOS — todas las notas y promedios van en Poppins
-           (legible, con ceros normales) para contrastar con la fuente del
-           tema. Va al final para ganar sobre las reglas anteriores.
+           FUENTES — el mismo reparto que SIGA producción (Intranotas):
+           - Poppins: el cuerpo de la página y casi todo el contenido
+             (nombres de curso, botones, casilleros, cajas, modales)
+           - Montserrat: valores grandes (promedios) y títulos de ventanas
+           - Black Ops One: título de la página y marca
+           - Orbitron: solo lo de "Análisis académico" (botones, títulos
+             de tarjetas, casilleros del mapa, meta)
+           Va al final para ganar sobre las reglas anteriores.
            ============================================================ */
         .componente label,
         .componente input,
         .prom-pc,
         .caja-necesito,
         .curso-card__promedio-etiqueta,
-        .curso-card__promedio-valor,
-        .card-promedio__valor,
-        .banner-riesgo__item {
+        .banner-riesgo__item,
+        .btn-ingresar-notas,
+        .btn-limpiar-curso,
+        .btn-accion,
+        .modal-mensaje,
+        .modal-btn,
+        .toast-notas,
+        .aa-caja__cerrar,
+        .select-custom-trigger,
+        .select-custom-lista li {
             font-family: var(--font-datos);
+        }
+
+        .card-promedio__valor,
+        .curso-card__promedio-valor,
+        .modal-titulo {
+            font-family: var(--font-valor);
+        }
+
+        .chip-herramienta,
+        .aa-caja__titulo,
+        .meta-panel__titulo,
+        .meta-tarjeta__nombre,
+        .meta-campo input {
+            font-family: var(--font-heading);
         }
     </style>
 </head>

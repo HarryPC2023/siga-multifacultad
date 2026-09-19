@@ -19,7 +19,7 @@ import { supabase, obtenerSesion } from './auth-siga.js';
 import { evaluarFormula, aplicarSustitutorio, truncarNota } from './formula-engine.js';
 import { calcularNecesito, conPendientesEnCero } from './escenarios.js';
 import { generarEscenariosMeta, TECHO_MAXIMO_EXAMEN } from './escenarios-meta.js';
-import { montarProgresoCarrera } from './progreso-carrera-ui.js';
+import { montarProgresoCarrera, nombreLindo } from './progreso-carrera-ui.js';
 import { construirValoresFormula, notaComoNumero, clasificarExamen } from './formula-mapper.js';
 import { FACULTADES } from './facultades-datos.js';
 
@@ -30,6 +30,7 @@ let formulasPorCurso = {};  // clave `${codigo_curso}|${seccion}|${periodo}` -> 
 let periodoActivo = null;
 let valoresSimulados = {};  // clave `${codigo_curso}|${seccion}` -> { N1: 14, EP: 12, ... } (solo del periodo activo)
 let usuarioActual = null;
+let claveAlmacenUsuario = null; // huella estable del alumno (por su código de estudiante) para lo guardado en el navegador
 
 document.addEventListener('DOMContentLoaded', async () => {
     const sesion = await obtenerSesion();
@@ -66,6 +67,11 @@ async function pintarIdentidad(sesion) {
         .select('codigo_estudiante, facultad, carrera, periodo_actual')
         .eq('user_id', sesion.user.id)
         .maybeSingle();
+
+    // Lo que el alumno guarda en este navegador se identifica por su código de
+    // estudiante (no por el user_id, que cambia con cada sesión anónima).
+    claveAlmacenUsuario = await claveDeAlmacenamiento(perfil?.codigo_estudiante);
+    migrarAlmacenAntiguo();
 
     // Sesión anónima (como es hoy este sandbox): sin nombre/foto de
     // Google todavía — se usa el código de estudiante como identidad
@@ -226,8 +232,15 @@ function seleccionarPeriodo(periodo) {
 let metaCursoClave = null;    // `codigo|seccion` del curso elegido en el panel
 let metaValorTexto = '14';    // lo último que escribió el alumno (14 por defecto, como en SIGA)
 
+/* Nombre legible del curso: INTRALU lo entrega en MAYÚSCULAS, sin tildes y con un guion
+   al final ("ECONOMIA GENERAL-"); SIGA lo muestra como "Economía General". */
+function nombreCursoLindo(curso) {
+    const crudo = (curso.nombre_curso || '').replace(/-+\s*$/, '').trim();
+    return crudo ? nombreLindo(crudo) : (curso.codigo_curso || '');
+}
+
 function nombreCursoMeta(curso) {
-    return (curso.nombre_curso || curso.codigo_curso || '').replace(/-+\s*$/, '').trim();
+    return nombreCursoLindo(curso);
 }
 
 function inicializarMetaCurso() {
@@ -507,8 +520,11 @@ function htmlResultadoMeta(r, etiquetas) {
 /* ============================================================
    GUARDAR / LIMPIAR TODO
    Lo que el alumno escribe en las casillas (sus notas probables) se
-   guarda en ESTE navegador, separado por usuario y por periodo —
-   varios alumnos comparten PC en la UNI, así que la clave lleva el id.
+   guarda en ESTE navegador, separado por alumno y por periodo — varios
+   alumnos comparten PC en la UNI. Cada alumno se identifica por la huella
+   de su CÓDIGO DE ESTUDIANTE: es estable, a diferencia del user_id, que
+   cambia cada vez que se inicia sesión (sesión anónima). La huella (SHA-256)
+   evita dejar el código a la vista en el nombre de la clave.
 
    Regla de seguridad: LO OFICIAL SIEMPRE GANA. Cada casilla guardada
    recuerda qué decía INTRALU en ese momento (`base`). Si al volver
@@ -518,7 +534,36 @@ function htmlResultadoMeta(r, etiquetas) {
 const CLAVE_ALMACEN_NOTAS = 'siga_mf_notas_guardadas_v1';
 
 function claveAlmacenNotas() {
-    return `${CLAVE_ALMACEN_NOTAS}_${usuarioActual?.id || 'anonimo'}`;
+    return `${CLAVE_ALMACEN_NOTAS}_${claveAlmacenUsuario || usuarioActual?.id || 'anonimo'}`;
+}
+
+/* Clave estable por alumno: huella de su código de estudiante. Sin código (perfil
+   incompleto) devuelve null y se usa el user_id como antes. */
+async function claveDeAlmacenamiento(codigo) {
+    const limpio = String(codigo || '').trim().toUpperCase();
+    if (!limpio) return null;
+    try {
+        const bytes = new TextEncoder().encode(`siga-mf|${limpio}`);
+        const huella = await crypto.subtle.digest('SHA-256', bytes);
+        const hex = [...new Uint8Array(huella)].map((b) => b.toString(16).padStart(2, '0')).join('');
+        return `c_${hex.slice(0, 24)}`;
+    } catch {
+        return `c_${limpio}`; // navegador sin crypto.subtle: se usa el código tal cual
+    }
+}
+
+/* Lo guardado antes de este cambio quedó bajo el user_id de esa sesión. Si la sesión
+   actual todavía tiene datos ahí, se pasan a la clave estable (sin pisar lo que ya haya). */
+function migrarAlmacenAntiguo() {
+    if (!usuarioActual || !claveAlmacenUsuario) return;
+    const claveVieja = `${CLAVE_ALMACEN_NOTAS}_${usuarioActual.id}`;
+    try {
+        const viejo = JSON.parse(localStorage.getItem(claveVieja));
+        if (!viejo) return;
+        const actual = leerAlmacenNotas();
+        Object.keys(viejo).forEach((periodo) => { if (!actual[periodo]) actual[periodo] = viejo[periodo]; });
+        if (escribirAlmacenNotas(actual)) localStorage.removeItem(claveVieja);
+    } catch { /* dato viejo dañado: se ignora */ }
 }
 
 function leerAlmacenNotas() {
@@ -833,7 +878,7 @@ function renderizarCursos() {
                 <p class="curso-card__promedio-valor">${notaFinal ?? '--'}</p>
             </div>
             <div class="curso-card__cuerpo-principal">
-                <p class="curso-card__nombre">${curso.nombre_curso || curso.codigo_curso}</p>
+                <p class="curso-card__nombre">${escaparHtml(nombreCursoLindo(curso))}</p>
                 <div class="curso-card__meta-fila">
                     <span class="curso-card__codigo">${curso.codigo_curso}</span>
                     ${creditos ? `<span class="badge badge-creditos">${creditos} créditos</span>` : ''}
@@ -877,7 +922,7 @@ function actualizarResumenPeriodo() {
             sumaCreditos += creditos;
         }
         if (notaFinal !== null && (estado.clase === 'badge-riesgo' || estado.clase === 'badge-critico')) {
-            enRiesgo.push(`${curso.nombre_curso || curso.codigo_curso} — ${notaFinal}`);
+            enRiesgo.push(`${escaparHtml(nombreCursoLindo(curso))} — ${notaFinal}`);
         }
     });
 
@@ -960,6 +1005,16 @@ function componentesVisibles(evaluaciones) {
 function armarCuerpoCurso(cuerpo, curso, idx) {
     const filas = componentesVisibles(curso.evaluaciones);
 
+    // "Limpiar notas" de ESTE curso, arriba a la derecha, igual que en SIGA.
+    const acciones = document.createElement('div');
+    acciones.className = 'curso-card__acciones';
+    acciones.innerHTML = '<button type="button" class="btn-limpiar-curso">🗑️ Limpiar notas</button>';
+    acciones.querySelector('button').addEventListener('click', (e) => {
+        e.stopPropagation();
+        limpiarNotasDeCurso(cuerpo, curso, idx);
+    });
+    cuerpo.appendChild(acciones);
+
     // Mismo orden y columnas que SIGA producción: cada grupo en su propia
     // fila (o filas) — PC y LAB de a 4, monografías de a 2 y los exámenes
     // aparte — para que las etiquetas y casilleros queden alineados.
@@ -1009,12 +1064,39 @@ function armarCuerpoCurso(cuerpo, curso, idx) {
     actualizarCuerpoCurso(cuerpo, curso, idx);
 }
 
+/* Igual que en SIGA: sin confirmación, borra al instante lo que el alumno escribió en
+   ESTE curso (también lo que tenía guardado de este curso) y avisa con un mensaje.
+   Las notas oficiales de INTRALU no se tocan: al limpiar, vuelven a verse ellas. */
+function limpiarNotasDeCurso(cuerpo, curso, idx) {
+    const clave = claveSimulacion(curso);
+    const habiaEscritas = !!valoresSimulados[clave] && Object.keys(valoresSimulados[clave]).length > 0;
+    delete valoresSimulados[clave];
+
+    let habiaGuardadas = false;
+    const almacen = leerAlmacenNotas();
+    const delPeriodo = almacen[periodoActivo];
+    if (delPeriodo && delPeriodo[clave]) {
+        habiaGuardadas = true;
+        delete delPeriodo[clave];
+        if (!Object.keys(delPeriodo).length) delete almacen[periodoActivo];
+        escribirAlmacenNotas(almacen);
+    }
+
+    // Se vuelve a armar el cuerpo con lo oficial de INTRALU (casilleros, promedio y caja).
+    cuerpo.innerHTML = '';
+    armarCuerpoCurso(cuerpo, curso, idx);
+
+    mostrarToast(habiaEscritas || habiaGuardadas
+        ? '🗑️ Notas del curso borradas'
+        : 'ℹ️ Este curso no tiene notas escritas por ti');
+}
+
 function actualizarCuerpoCurso(cuerpo, curso, idx) {
     const { pp, notaFinal: notaFinalCalculada, formula, valores } = calcularCurso(curso);
     const notaFinal = notaFinalMostrada(curso, notaFinalCalculada);
 
     cuerpo.querySelector('.prom-pc').innerHTML = pp !== null
-        ? `Prom. PC: <strong>${pp.toFixed(2)}</strong>`
+        ? `Prom. PC: <strong>${truncarDecimales(pp, 3).toFixed(3)}</strong>`
         : '';
 
     // Actualiza también la cabecera de la card sin re-renderizar toda la lista

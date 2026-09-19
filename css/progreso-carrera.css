@@ -1,8 +1,9 @@
 /* ============================================================
    🗺️ PROGRESO DE TU CARRERA — mapa de malla interactivo (sandbox)
-   Mismo diseño que SIGA producción: ventana emergente grande sobre toda
-   la página (380px se queda corto para 10 ciclos legibles). El contenido
-   va en Poppins (fuente de datos) y los títulos conservan la del tema.
+   Mismo diseño y MISMAS FUENTES que SIGA producción: ventana emergente
+   grande sobre toda la página. Poppins para el contenido; Orbitron para
+   el título, el valor de créditos, las etiquetas de ciclo, los casilleros
+   y el encabezado del detalle.
    Va en css/progreso-carrera.css; se carga desde notas.html.
    ============================================================ */
 
@@ -58,7 +59,7 @@
 }
 
 .pc-modal-titulo {
-    font-family: var(--font-heading, inherit);
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
     font-weight: 700;
     font-size: 1.05rem;
 }
@@ -108,6 +109,7 @@
 }
 
 .pc-stat-valor {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
     font-weight: 700;
     font-size: 1.4rem;
     color: var(--brand-morado, #6600CC);
@@ -193,7 +195,7 @@
     flex-shrink: 0;
     width: 62px;
     padding-top: 8px;
-    font-family: var(--font-heading, inherit);
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
     font-weight: 700;
     font-size: 0.72rem;
     color: #6b7280;
@@ -215,7 +217,7 @@
 }
 
 .pc-bloque-titulo {
-    font-family: var(--font-heading, inherit);
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
     font-weight: 700;
     font-size: 0.8rem;
     margin-bottom: 8px;
@@ -231,7 +233,7 @@
 
 .pc-chip {
     position: relative;
-    font-family: var(--font-datos, 'Poppins', 'Segoe UI', Arial, sans-serif);
+    font-family: var(--font-body, 'Orbitron', sans-serif);
     font-size: 0.72rem;
     font-weight: 600;
     padding: 8px 10px;
@@ -302,10 +304,21 @@
     border: 1.5px solid #fff;
 }
 
-.pc-dot.pc-estado-aprobado { background: #0b6e4f; }
-.pc-dot.pc-estado-en_curso { background: #3C7CF8; }
-.pc-dot.pc-estado-proximo { background: var(--brand-morado, #6600CC); }
-.pc-dot.pc-estado-disponible { background: #6b7280; }
+.pc-dot.pc-estado-aprobado {
+    background: #0b6e4f;
+}
+
+.pc-dot.pc-estado-en_curso {
+    background: #3C7CF8;
+}
+
+.pc-dot.pc-estado-proximo {
+    background: var(--brand-morado, #6600CC);
+}
+
+.pc-dot.pc-estado-disponible {
+    background: #6b7280;
+}
 
 /* ---------- Panel de detalle ---------- */
 .pc-detalle {
@@ -316,6 +329,7 @@
 }
 
 .pc-detalle-header {
+    font-family: var(--font-heading, 'Orbitron', sans-serif);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
