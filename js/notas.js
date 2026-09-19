@@ -1109,7 +1109,7 @@ function limpiarNotasDeCurso(cuerpo, curso, idx) {
 
     mostrarToast(habiaEscritas || habiaGuardadas
         ? '🗑️ Notas del curso borradas'
-        : 'ℹ️ Este curso no tiene notas escritas por ti');
+        : 'ℹ️ Notas cargadas de INTRALU. Para probar otra nota, escribe sobre ella');
 }
 
 function actualizarCuerpoCurso(cuerpo, curso, idx) {
